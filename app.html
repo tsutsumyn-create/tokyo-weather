@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="東京の天気">
-<meta name="theme-color" content="#64C6C7">
+<meta name="theme-color" content="#a3b0bb">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -31,6 +31,7 @@ body{margin:0;height:100%;overflow:hidden;background:#0d1317;font-family:var(--f
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 
+#topband{position:fixed;left:0;right:0;top:0;height:max(env(safe-area-inset-top,0px),1px);z-index:30;pointer-events:none}
 #scene{position:fixed;inset:0;overflow:hidden;transform-origin:50% 0;will-change:transform}
 .bg{position:absolute;inset:0;will-change:opacity;transform:translateZ(0)}
 .g-sun{background:linear-gradient(180deg,#f2cc55 0%,#F6DE7D 45%,#F5DEB3 100%)}
@@ -137,6 +138,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 @media (max-height:640px){.strip{display:none}}
 </style>
 </head><body>
+<div id="topband" aria-hidden="true"></div>
 <div id="scene">
   <div class="bg" id="bgA"></div><div class="bg" id="bgB" style="opacity:0"></div>
   <main class="stage">
@@ -706,7 +708,7 @@ let RAW=null;
 function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
   const all=d.days, fut=all.filter(x=>relDay(x)>=0);
   DAYS=fut.length?fut:all.slice(-1);
-  document.getElementById('snap').textContent=(d.snap||'')+' · v1.0.2'}
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.0.3'}
 /* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
 let shownToday=todayStart().getTime();
 function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
@@ -782,6 +784,17 @@ function buildDots(){
   $('dots').querySelectorAll('button').forEach((b,k)=>b.addEventListener('click',()=>jump(k)));
 }
 /* 位置xを反映：トラック・背景・文字色・インジケータ・奥行き */
+const TOPC={sun:[242,204,85],cs:[141,158,172],cl:[163,176,187],rn:[79,96,110]};
+const metaTheme=document.querySelector('meta[name="theme-color"]');
+let lastTop='';
+function setTop(a,b,t){
+  const A=TOPC[a]||TOPC.cl, B=TOPC[b]||A;
+  const c='#'+A.map((v,i)=>Math.round(v+(B[i]-v)*t).toString(16).padStart(2,'0')).join('');
+  if(c===lastTop) return; lastTop=c;
+  document.getElementById('topband').style.backgroundColor=c;
+  document.documentElement.style.backgroundColor=c; document.body.style.backgroundColor=c;
+  if(metaTheme) metaTheme.setAttribute('content',c);
+}
 function setX(nx){
   x=nx;
   track.style.transform=`translate3d(${-W+x}px,0,0)`;
@@ -795,6 +808,7 @@ function setX(nx){
     if(r.pz) r.pz.style.transform=`translate3d(${-off*.2}px,0,0)`;
     if(r.ic) r.ic.style.transform=`translate3d(${-off*.08}px,0,0) scale(${1-q*.12})`;
   });
+  setTop(moodOf(cur),nm||moodOf(cur),nm?Math.min(1,Math.abs(p)):0);
   const vis=(Math.abs(p)>.5&&nm)?nm:moodOf(cur), sun=vis==='sun';
   if(sun!==lastSun){root.classList.toggle('w-sun',sun);lastSun=sun}
   const pos=Math.max(0,Math.min(DAYS.length-1,cur-p));
@@ -838,7 +852,7 @@ function jump(k){
     cur=k;renderPanels();setX(0);
     vp.animate([{opacity:0,transform:'scale(.985)'},{opacity:1,transform:'none'}],{duration:t,easing:'cubic-bezier(.22,1,.36,1)'});
   };
-  over.style.opacity=0;over.animate([{opacity:0},{opacity:1}],{duration:t,easing:'ease'}).onfinish=()=>{$('bgA').className='bg g-'+moodOf(k);over.style.opacity=0};
+  setTop(moodOf(k),moodOf(k),0);over.style.opacity=0;over.animate([{opacity:0},{opacity:1}],{duration:t,easing:'ease'}).onfinish=()=>{$('bgA').className='bg g-'+moodOf(k);over.style.opacity=0};
 }
 function show(i){cur=Math.max(0,Math.min(DAYS.length-1,i));buildDots();renderPanels();setX(0)}
 function measure(){W=vp.clientWidth||1;setX(0);placeArrows()}
