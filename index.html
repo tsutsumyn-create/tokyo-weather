@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="東京の天気">
+<meta name="theme-color" content="#64C6C7">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>東京の天気</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@200;300;400;500&family=M+PLUS+Rounded+1c:wght@300;400;500;700&display=swap">
+<style>
+/* Layout: フルブリード1画面。背景色＝その日の天気（晴れ:黄 / 曇り時々晴れ:スレート→ターコイズ / 曇り:グレー / 雨:濃スレート）。
+   左右の矢印・スワイプで8日分を送り、タップか上スワイプで4社の見立てシート。天気ごとに色を変えるため単一ルック（テーマ非連動） */
+:root{
+  --teal:#64C6C7; --sun:#F6DE7D; --sand:#F5DEB3; --slate:#708090; --ivory:#FFFAF0;
+  --ink:#2c3a47; --ink-soft:#5d6b7a; --line:#e6ddcc;
+  --fg:#ffffff; --fg-soft:rgba(255,255,255,.78); --fg-line:rgba(255,255,255,.55); --dot:#F6DE7D;
+  --f-ui:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Hiragino Sans",system-ui,sans-serif;
+  --f-num:"Jost","Futura","Avenir Next",system-ui,sans-serif;
+  color-scheme:light;
+}
+:root.w-sun{--fg:#4d3f17; --fg-soft:rgba(77,63,23,.72); --fg-line:rgba(77,63,23,.4); --dot:#4d3f17}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--slate);color:var(--fg);font-family:var(--f-ui);overflow:hidden;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0;
+  -webkit-tap-highlight-color:transparent;transition:color .4s}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+
+/* 背景2枚をクロスフェード */
+.bg{position:fixed;inset:0;z-index:-1;transition:opacity .6s ease}
+.g-sun{background:linear-gradient(180deg,#f2cc55 0%,#F6DE7D 45%,#F5DEB3 100%)}
+.g-cs{background:linear-gradient(180deg,#8d9eac 0%,#64C6C7 100%)}
+.g-cl{background:linear-gradient(180deg,#a3b0bb 0%,#708090 100%)}
+.g-rn{background:linear-gradient(180deg,#4f606e 0%,#2b3842 100%)}
+
+.stage{height:100%;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);max-width:440px;margin:0 auto;display:flex;flex-direction:column;align-items:center;
+  touch-action:pan-y;user-select:none}
+.bar{width:100%;display:flex;justify-content:space-between;font-size:.74rem;color:var(--fg-soft)}
+.day{font-family:var(--f-num);font-weight:300;font-size:clamp(1.4rem,4.2vh,1.9rem);letter-spacing:.04em;margin-top:clamp(4px,1.4vh,14px);display:flex;align-items:baseline;gap:8px}
+.day small{font-family:var(--f-ui);font-size:.82rem;color:var(--fg-soft);letter-spacing:0}
+.day .tag{font-family:var(--f-ui);font-size:.68rem;border:1px solid var(--fg-line);border-radius:99px;padding:0 8px;letter-spacing:0;align-self:center}
+.hero{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;width:100%}
+.t{display:flex;align-items:flex-start;gap:4px;line-height:1}
+.big{font-family:var(--f-num);font-weight:200;font-size:clamp(92px,21vh,168px);letter-spacing:-.04em;line-height:.9}
+.deg{font-family:var(--f-num);font-weight:200;font-size:clamp(32px,6vh,50px);margin-top:.15em}
+.lo{display:flex;flex-direction:column;margin:auto 0 .5em 6px;font-size:.78rem;color:var(--fg-soft)}
+.lo b{font-family:var(--f-num);font-weight:300;font-size:clamp(1.6rem,4.4vh,2.2rem);color:var(--fg);line-height:1.1}
+.icrow{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:clamp(0px,1vh,10px)}
+.nav{width:44px;height:64px;display:grid;place-items:center;transition:opacity .2s}
+.nav[disabled]{opacity:.2;cursor:default}
+.nav svg{width:30px;height:44px}
+.wxic{width:clamp(96px,17vh,140px);height:clamp(96px,17vh,140px)}
+.wx{font-weight:300;font-size:clamp(1.15rem,3.1vh,1.5rem);letter-spacing:.04em;margin-top:2px;text-align:center;text-wrap:balance}
+.dots{display:flex;gap:7px;margin-top:clamp(8px,1.6vh,16px)}
+.dots button{width:18px;height:18px;display:grid;place-items:center}
+.dots i{width:6px;height:6px;border-radius:50%;border:1.5px solid var(--fg-soft);display:block}
+.dots button[aria-current="true"] i{background:var(--dot);border-color:var(--dot);transform:scale(1.25)}
+.chip{font-size:.72rem;margin-top:6px;border:1px solid var(--fg-line);border-radius:99px;padding:2px 12px;display:flex;gap:8px;align-items:center}
+.chip i{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+.lower{margin-top:auto;width:100%;display:flex;flex-direction:column;gap:clamp(8px,1.6vh,16px)}
+.strip{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;border-top:1px solid var(--fg-line);padding-top:8px}
+.strip div{display:flex;flex-direction:column;align-items:center;gap:1px}
+.strip .h{font-size:.6rem;color:var(--fg-soft)}
+.strip svg{width:24px;height:24px}
+.strip .tt{font-family:var(--f-num);font-weight:300;font-size:.84rem}
+.tips{display:grid;grid-template-columns:repeat(var(--n),1fr);text-align:center}
+.tip{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0}
+.tip svg{width:30px;height:30px}
+.tip span{font-size:.64rem;color:var(--fg-soft)}
+.tip b{font-weight:400;font-size:.84rem;line-height:1.3}
+.lv{display:flex;gap:3px;margin-top:3px}
+.lv i{width:10px;height:2px;border-radius:2px;background:var(--fg-line)}
+.lv i.on{background:var(--fg)}
+.note{font-size:.82rem;line-height:1.6;text-align:center;color:var(--fg);margin:0 auto;max-width:30em;font-weight:300}
+.up{align-self:center;font-size:.74rem;color:var(--fg-soft);display:flex;align-items:center;gap:6px;padding:4px 10px}
+.up svg{width:14px;height:14px}
+:focus-visible{outline:2px solid var(--fg);outline-offset:3px;border-radius:6px}
+
+/* シート */
+.scrim{position:fixed;inset:0;background:rgba(30,40,50,.45);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-height:86%;overflow-y:auto;background:var(--ivory);color:var(--ink);border-radius:24px 24px 0 0;
+  padding:8px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  transform:translateY(105%);transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+.sheet.on{transform:none}
+.sheet-in{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.grab{width:40px;height:5px;border-radius:9px;background:var(--line);margin:2px auto 4px}
+.sh-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sh-head h2{margin:0;font-size:.98rem}
+.sh-head p{margin:0;font-size:.74rem;color:var(--ink-soft)}
+.x{width:34px;height:34px;border-radius:50%;background:#fff;font-size:1rem;flex:none;color:var(--ink)}
+.src{background:#fff;border-radius:16px;padding:10px 12px;display:grid;grid-template-columns:40px 1fr auto;gap:10px;align-items:center;border-left:5px solid var(--c);opacity:0;transform:translateY(24px)}
+.sheet.on .src{animation:float .45s cubic-bezier(.2,.8,.2,1) forwards}
+.sheet.on .src:nth-child(3){animation-delay:.04s}.sheet.on .src:nth-child(4){animation-delay:.12s}.sheet.on .src:nth-child(5){animation-delay:.2s}.sheet.on .src:nth-child(6){animation-delay:.28s}
+@keyframes float{to{opacity:1;transform:none}}
+.src svg{width:40px;height:40px;color:var(--slate)}
+.src .nm{font-weight:700;font-size:.88rem}
+.src .nm small{font-weight:400;color:var(--ink-soft);font-size:.66rem;margin-left:6px}
+.src .ws{font-size:.8rem;line-height:1.35}
+.src .nt{grid-column:1/-1;font-size:.74rem;color:var(--ink-soft);border-top:1px dashed var(--line);padding-top:6px}
+.src .nt a{color:#1f8f91}
+.src .tv{font-family:var(--f-num);text-align:right;white-space:nowrap}
+.src .tv b{color:#c07f17;font-weight:400;font-size:1.15rem}
+.src .tv span{color:#1f8f91;margin-left:4px}
+.src .tv small{display:block;font-size:.66rem;color:var(--ink-soft)}
+.why{background:#e3f4f4;border-radius:14px;padding:10px 12px;font-size:.8rem;opacity:0;transform:translateY(24px)}
+.why b{display:block;font-size:.72rem;color:#1f8f91;margin-bottom:2px}
+.sheet.on .why{animation:float .45s .36s cubic-bezier(.2,.8,.2,1) forwards}
+.src-foot{font-size:.66rem;color:var(--ink-soft);text-align:center}
+.x:focus-visible,.src a:focus-visible{outline-color:#1f8f91}
+@media (prefers-reduced-motion:reduce){.bg,.sheet,.scrim{transition:none}.sheet.on .src,.sheet.on .why{animation:none;opacity:1;transform:none}}
+@media (max-height:640px){.strip{display:none}}
+</style>
+</head><body>
+
+<div class="bg" id="bg1"></div><div class="bg" id="bg2" style="opacity:0"></div>
+<main class="stage" id="stage">
+  <div class="bar"><span>東京23区</span><span id="snap">10/27 10時台取得</span></div>
+  <div class="day" id="day"></div>
+  <button class="hero" id="hero" aria-label="4社の見立てを見る">
+    <span class="t"><span class="big" id="hi"></span><span class="deg">°</span><span class="lo">最低<b id="lo"></b></span></span>
+  </button>
+  <div class="icrow">
+    <button class="nav" id="prev" aria-label="前の日"><svg class="li" viewBox="0 0 30 44" stroke-width="1.6"><path d="M24 4L6 22l18 18"/></svg></button>
+    <button class="hero" id="hero2" style="width:auto" aria-label="4社の見立てを見る"><span id="wxic"></span></button>
+    <button class="nav" id="next" aria-label="次の日"><svg class="li" viewBox="0 0 30 44" stroke-width="1.6"><path d="M6 4l18 18L6 40"/></svg></button>
+  </div>
+  <div class="wx" id="wx"></div>
+  <div class="dots" id="dots" role="tablist" aria-label="日付"></div>
+  <div class="chip" id="chip"></div>
+  <div class="lower" id="lower"></div>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title"><div class="sheet-in" id="sheet-in"></div></div>
+
+<script>
+/* ---------- 線画アイコン ---------- */
+const sunL=(x,y,r)=>{let s=`<circle cx="${x}" cy="${y}" r="${r}"/>`;for(let i=0;i<8;i++){const a=i*Math.PI/4;s+=`<line x1="${(x+Math.cos(a)*(r+4)).toFixed(1)}" y1="${(y+Math.sin(a)*(r+4)).toFixed(1)}" x2="${(x+Math.cos(a)*(r+9)).toFixed(1)}" y2="${(y+Math.sin(a)*(r+9)).toFixed(1)}"/>`}return s};
+const cloudL=(x,y,s)=>`<path transform="translate(${x} ${y}) scale(${s})" vector-effect="non-scaling-stroke" d="M14 40h30a11 11 0 0 0 0-22 15 15 0 0 0-28-3 11 11 0 0 0-2 25z"/>`;
+const dropsL=(x,y)=>[0,9,18].map(d=>`<line x1="${x+d}" y1="${y}" x2="${x+d-3}" y2="${y+7}"/>`).join('');
+const arrowL=x=>`<path d="M${x} 30l4 3-4 3"/>`;
+const peek=()=>`<path d="M36 14a9 9 0 0 1 15 9"/>`+[0,1,2,3].map(i=>{const a=-Math.PI*.9+i*Math.PI*.33;return `<line x1="${(44+Math.cos(a)*13).toFixed(1)}" y1="${(22+Math.sin(a)*13).toFixed(1)}" x2="${(44+Math.cos(a)*17).toFixed(1)}" y2="${(22+Math.sin(a)*17).toFixed(1)}"/>`}).join('');
+const ICON={
+  sun:()=>sunL(32,32,11),
+  moon:()=>`<path d="M38 14a18 18 0 1 0 12 26 14 14 0 0 1-12-26z"/>`,
+  cloud:()=>cloudL(4,8,1),
+  rain:()=>cloudL(4,2,1)+dropsL(20,48),
+  'cloud-rain':()=>cloudL(4,2,1)+dropsL(22,48),
+  'sun-cloud':()=>sunL(24,24,9)+cloudL(18,22,.8),
+  'cloud-sun':()=>peek()+cloudL(2,14,1),
+  'sun-then-cloud':()=>sunL(15,32,7)+arrowL(28)+cloudL(30,19,.56),
+  'cloud-then-sun':()=>cloudL(0,16,.6)+arrowL(31)+sunL(50,33,7),
+  'rain-then-sun':()=>cloudL(0,12,.6)+dropsL(8,42)+arrowL(31)+sunL(50,33,7),
+  umbrella:()=>`<path d="M8 30a24 22 0 0 1 48 0z"/><path d="M32 30v16a5 5 0 0 1-10 0"/>`,
+  jacket:()=>`<path d="M23 10l-11 6-5 15 7 2 3-7v24h30V26l3 7 7-2-5-15-11-6-9 7z"/><path d="M32 17v33"/>`,
+  uv:()=>`<rect x="21" y="18" width="22" height="34" rx="6"/><rect x="26" y="9" width="12" height="9" rx="2"/><circle cx="32" cy="35" r="4"/>`,
+  wind:()=>`<path d="M8 24h26a6 6 0 1 0-6-6"/><path d="M8 34h38a6 6 0 1 1-6 6"/><path d="M8 44h16"/>`,
+  drop:()=>`<path d="M32 10C24 22 18 30 18 38a14 14 0 0 0 28 0c0-8-6-16-14-28z"/>`,
+  agree:()=>`<circle cx="24" cy="26" r="12"/><circle cx="40" cy="26" r="12"/><circle cx="32" cy="40" r="12"/>`,
+  shield:()=>`<path d="M32 8l18 7v14c0 12-8 21-18 26-10-5-18-14-18-26V15z"/><path d="M25 32l5 5 10-11"/>`
+};
+const icon=(k,cls,sw)=>`<svg class="li ${cls||''}" viewBox="0 0 64 64" stroke-width="${sw||1.8}" aria-hidden="true">${(ICON[k]||ICON.cloud)()}</svg>`;
+
+/* ---------- データ（毎朝の更新タスクがここを書き換える） ---------- */
+let SITES,DAYS,WEEK_PUB;
+const FALLBACK={
+ "snap": "10/27 10時台取得",
+ "sites": {
+  "jma": {
+   "name": "気象庁",
+   "c": "#F5DEB3",
+   "url": "https://www.jma.go.jp/bosai/forecast/#area_type=offices&area_code=130000"
+  },
+  "tenki": {
+   "name": "tenki.jp",
+   "c": "#64C6C7",
+   "url": "https://tenki.jp/forecast/3/16/4410/"
+  },
+  "wn": {
+   "name": "ウェザーニュース",
+   "c": "#F6DE7D",
+   "url": "https://weathernews.jp/onebox/tenki/tokyo/13100/"
+  },
+  "yahoo": {
+   "name": "Yahoo!天気",
+   "c": "#708090",
+   "url": "https://weather.yahoo.co.jp/weather/jp/13/4410.html"
+  }
+ },
+ "days": [
+  {
+   "id": "d27",
+   "m": 10,
+   "d": 27,
+   "dow": "火",
+   "wx": "曇り 昼過ぎから晴れ間",
+   "ic": "cloud-sun",
+   "hi": 22,
+   "lo": 15,
+   "pop": 30,
+   "note": "未明の雨は明け方に終了。日中は雨の心配ほぼなし。北寄りの風で夕方以降は空気がひんやり。",
+   "tips": [
+    {
+     "ic": "umbrella",
+     "k": "傘",
+     "v": "折りたたみ",
+     "lv": 1
+    },
+    {
+     "ic": "jacket",
+     "k": "服装",
+     "v": "薄手の上着",
+     "lv": 2
+    },
+    {
+     "ic": "uv",
+     "k": "日焼け止め",
+     "v": "軽めでOK",
+     "lv": 1
+    }
+   ],
+   "strip": [
+    [
+     3,
+     "rain",
+     16
+    ],
+    [
+     6,
+     "cloud",
+     16
+    ],
+    [
+     9,
+     "cloud",
+     18
+    ],
+    [
+     12,
+     "cloud-sun",
+     21
+    ],
+    [
+     15,
+     "cloud-sun",
+     22
+    ],
+    [
+     18,
+     "cloud",
+     20
+    ],
+    [
+     21,
+     "moon",
+     19
+    ]
+   ],
+   "why": "4社とも最高22〜23℃で一致。ウェザーニュースの午前90%は止んだ未明の雨を含む12時間の確率で、気象庁の6時間刻みでは昼以降10%。区切り方の違いで、見立て自体は割れていない。",
+   "src": {
+    "jma": {
+     "wx": "くもり 昼過ぎから時々晴れ 所により昼前まで雨",
+     "ic": "cloud-sun",
+     "hi": 22,
+     "lo": "—",
+     "pop": "30 / 10 / 10%",
+     "pub": "27日05:00発表",
+     "nt": "6〜12時30%、12〜18時10%、18〜24時10%。23区西部は北の風やや強く。"
+    },
+    "tenki": {
+     "wx": "曇り、夜は晴れ",
+     "ic": "cloud",
+     "hi": 22.5,
+     "lo": 15,
+     "pop": "30%",
+     "pub": "27日08:00発表",
+     "nt": "15時に22.5℃でピーク。21時以降は晴れ。"
+    },
+    "wn": {
+     "wx": "くもり",
+     "ic": "cloud",
+     "hi": 23,
+     "lo": 15,
+     "pop": "午前90% / 午後40%",
+     "pub": "06時の実況まで反映",
+     "nt": "0〜2時に1mm、以降0mm。午後のにわか雨に注意喚起。06時実況 15.4℃。"
+    },
+    "yahoo": {
+     "wx": "雨のち晴れ",
+     "ic": "rain-then-sun",
+     "hi": 22,
+     "lo": 17,
+     "pop": "—",
+     "pub": "26日08:00発表（旧い版）",
+     "nt": "0〜6時は雨、12時以降は晴れ主体。最低17℃は旧い版のため実況より高め。"
+    }
+   }
+  },
+  {
+   "id": "d28",
+   "m": 10,
+   "d": 28,
+   "dow": "水",
+   "wx": "晴れ 夜は曇り",
+   "ic": "sun-then-cloud",
+   "hi": 20,
+   "lo": 14,
+   "pop": 10,
+   "note": "冬型の気圧配置で北寄りの風がやや強まる（6〜8m/s）。今日より2℃低く、夕方から急に冷える。",
+   "tips": [
+    {
+     "ic": "umbrella",
+     "k": "傘",
+     "v": "不要",
+     "lv": 0
+    },
+    {
+     "ic": "jacket",
+     "k": "服装",
+     "v": "上着必須",
+     "lv": 3
+    },
+    {
+     "ic": "uv",
+     "k": "日焼け止め",
+     "v": "長時間なら",
+     "lv": 2
+    },
+    {
+     "ic": "wind",
+     "k": "風",
+     "v": "北北西7m",
+     "lv": 2
+    }
+   ],
+   "strip": [
+    [
+     3,
+     "moon",
+     17
+    ],
+    [
+     6,
+     "sun",
+     15
+    ],
+    [
+     9,
+     "sun",
+     17
+    ],
+    [
+     12,
+     "sun",
+     19
+    ],
+    [
+     15,
+     "sun",
+     18
+    ],
+    [
+     18,
+     "cloud",
+     14
+    ],
+    [
+     21,
+     "cloud",
+     13
+    ]
+   ],
+   "why": "4社とも晴れ・最高19〜20℃で一致。気象庁は終日降水確率0%で「北の風 後 やや強く」。",
+   "src": {
+    "jma": {
+     "wx": "晴れ 夜くもり",
+     "ic": "sun-then-cloud",
+     "hi": 20,
+     "lo": 15,
+     "pop": "0%",
+     "pub": "27日05:00発表",
+     "nt": "6時間ごとの降水確率はすべて0%。北の風、後やや強く。"
+    },
+    "tenki": {
+     "wx": "晴のち曇",
+     "ic": "sun-then-cloud",
+     "hi": 20,
+     "lo": 14,
+     "pop": "30%",
+     "pub": "27日08:00発表",
+     "nt": "午前中は北北西6〜8m/sの風。18時以降は曇りで14℃台まで低下。"
+    },
+    "wn": {
+     "wx": "晴れ時々くもり",
+     "ic": "sun-cloud",
+     "hi": 19,
+     "lo": 12,
+     "pop": "午前10% / 午後30%",
+     "pub": "27日朝時点",
+     "nt": "日中は北北西5〜6m/s。17時に15℃、21時に13℃と夕方の冷え込みが早い。"
+    },
+    "yahoo": {
+     "wx": "晴れ",
+     "ic": "sun",
+     "hi": 20,
+     "lo": 14,
+     "pop": "0%",
+     "pub": "26日08:00発表（週間）",
+     "nt": "降水確率0%。"
+    }
+   }
+  },
+  {
+   "id": "d29",
+   "m": 10,
+   "d": 29,
+   "dow": "木",
+   "wx": "曇り",
+   "ic": "cloud",
+   "hi": 16,
+   "lo": 11,
+   "pop": 40,
+   "rel": "B",
+   "note": "日差しが乏しく最高16℃。今季一番の肌寒さ。",
+   "why": "最高16℃は4社完全一致。気象庁の予測範囲も14〜20℃。Yahooのみ一時雨（60%）。",
+   "src": {
+    "jma": {
+     "wx": "くもり",
+     "ic": "cloud",
+     "hi": 16,
+     "lo": 11,
+     "pop": "40%",
+     "nt": "信頼度B。最高の予測範囲14〜20℃、最低10〜13℃。"
+    },
+    "tenki": {
+     "wx": "曇",
+     "ic": "cloud",
+     "hi": 16,
+     "lo": 12,
+     "pop": "40%"
+    },
+    "wn": {
+     "wx": "くもり",
+     "ic": "cloud",
+     "hi": 16,
+     "lo": 11,
+     "pop": "40%"
+    },
+    "yahoo": {
+     "wx": "曇一時雨",
+     "ic": "cloud-rain",
+     "hi": 16,
+     "lo": 10,
+     "pop": "60%"
+    }
+   }
+  },
+  {
+   "id": "d30",
+   "m": 10,
+   "d": 30,
+   "dow": "金",
+   "wx": "曇り 一時雨",
+   "ic": "cloud-rain",
+   "hi": 20,
+   "lo": 13,
+   "pop": 60,
+   "rel": "C",
+   "note": "見解が最も割れている日。傘は持っておくのが無難。",
+   "why": "降水確率が30〜90%と大きく割れ、気象庁の信頼度もC（予報が変わりやすい）。前線の通過タイミングの読みが各社で違う。当日朝の最新版で判断したい。",
+   "src": {
+    "jma": {
+     "wx": "くもり 一時雨",
+     "ic": "cloud-rain",
+     "hi": 21,
+     "lo": 13,
+     "pop": "50%",
+     "nt": "信頼度C。最高の予測範囲19〜23℃。"
+    },
+    "tenki": {
+     "wx": "曇時々雨",
+     "ic": "cloud-rain",
+     "hi": 17,
+     "lo": 12,
+     "pop": "90%"
+    },
+    "wn": {
+     "wx": "くもり一時雨",
+     "ic": "cloud-rain",
+     "hi": 19,
+     "lo": 13,
+     "pop": "60%"
+    },
+    "yahoo": {
+     "wx": "曇時々晴",
+     "ic": "cloud-sun",
+     "hi": 23,
+     "lo": 13,
+     "pop": "30%"
+    }
+   }
+  },
+  {
+   "id": "d31",
+   "m": 10,
+   "d": 31,
+   "dow": "土",
+   "wx": "晴れ時々曇り",
+   "ic": "sun-cloud",
+   "hi": 24,
+   "lo": 14,
+   "pop": 20,
+   "rel": "B",
+   "note": "ハロウィンは気温上昇。朝晩との寒暖差が10℃前後。",
+   "why": "民間3社は晴れだが、気象庁はくもり・降水確率40%と慎重。気温は23〜25℃でほぼ一致し、雲の量の見立てだけが違う。",
+   "src": {
+    "jma": {
+     "wx": "くもり",
+     "ic": "cloud",
+     "hi": 23,
+     "lo": 14,
+     "pop": "40%",
+     "nt": "信頼度B。最高の予測範囲21〜26℃。"
+    },
+    "tenki": {
+     "wx": "晴",
+     "ic": "sun",
+     "hi": 24,
+     "lo": 12,
+     "pop": "10%"
+    },
+    "wn": {
+     "wx": "晴れ時々くもり",
+     "ic": "sun-cloud",
+     "hi": 24,
+     "lo": 14,
+     "pop": "20%"
+    },
+    "yahoo": {
+     "wx": "晴時々曇",
+     "ic": "sun-cloud",
+     "hi": 25,
+     "lo": 14,
+     "pop": "20%"
+    }
+   }
+  },
+  {
+   "id": "d01",
+   "m": 11,
+   "d": 1,
+   "dow": "日",
+   "wx": "晴れ時々曇り",
+   "ic": "sun-cloud",
+   "hi": 19,
+   "lo": 12,
+   "pop": 20,
+   "rel": "A",
+   "note": "前日より5℃ほど下がる。",
+   "why": "気象庁の信頼度はA。天気の見立ては近く、最高は18〜20℃。",
+   "src": {
+    "jma": {
+     "wx": "晴れ時々くもり",
+     "ic": "sun-cloud",
+     "hi": 20,
+     "lo": 12,
+     "pop": "20%",
+     "nt": "信頼度A。最高の予測範囲17〜22℃。"
+    },
+    "tenki": {
+     "wx": "晴時々曇",
+     "ic": "sun-cloud",
+     "hi": 18,
+     "lo": 11,
+     "pop": "20%"
+    },
+    "wn": {
+     "wx": "くもり時々晴れ",
+     "ic": "cloud-sun",
+     "hi": 18,
+     "lo": 12,
+     "pop": "30%"
+    },
+    "yahoo": {
+     "wx": "曇時々晴",
+     "ic": "cloud-sun",
+     "hi": 20,
+     "lo": 12,
+     "pop": "20%"
+    }
+   }
+  },
+  {
+   "id": "d02",
+   "m": 11,
+   "d": 2,
+   "dow": "月",
+   "wx": "曇り",
+   "ic": "cloud",
+   "hi": 20,
+   "lo": 14,
+   "pop": 40,
+   "rel": "B",
+   "note": "雲が多い。Yahooは一時雨を予想。",
+   "why": "最高気温が18〜22℃と4℃の幅。気象庁の予測範囲も16〜24℃と広く、先の日ほど不確実性が大きい。",
+   "src": {
+    "jma": {
+     "wx": "くもり",
+     "ic": "cloud",
+     "hi": 20,
+     "lo": 14,
+     "pop": "40%",
+     "nt": "信頼度B。最高の予測範囲16〜24℃。"
+    },
+    "tenki": {
+     "wx": "曇時々晴",
+     "ic": "cloud-sun",
+     "hi": 18,
+     "lo": 13,
+     "pop": "40%"
+    },
+    "wn": {
+     "wx": "くもり",
+     "ic": "cloud",
+     "hi": 22,
+     "lo": 14,
+     "pop": "40%"
+    },
+    "yahoo": {
+     "wx": "曇一時雨",
+     "ic": "cloud-rain",
+     "hi": 21,
+     "lo": 12,
+     "pop": "50%"
+    }
+   }
+  },
+  {
+   "id": "d03",
+   "m": 11,
+   "d": 3,
+   "dow": "火・祝",
+   "wx": "曇り時々晴れ",
+   "ic": "cloud-sun",
+   "hi": 18,
+   "lo": 12,
+   "pop": 30,
+   "note": "文化の日。朝の冷え込みに注意。",
+   "why": "気象庁とYahooの週間予報はこの日まで届いていないため2社で判断。",
+   "src": {
+    "tenki": {
+     "wx": "曇時々晴",
+     "ic": "cloud-sun",
+     "hi": 18,
+     "lo": 13,
+     "pop": "30%"
+    },
+    "wn": {
+     "wx": "くもり時々晴れ",
+     "ic": "cloud-sun",
+     "hi": 17,
+     "lo": 12,
+     "pop": "30%"
+    }
+   }
+  }
+ ],
+ "weekPub": {
+  "jma": "26日17:00発表",
+  "tenki": "26日22:00発表",
+  "wn": "27日朝時点",
+  "yahoo": "26日08:00発表"
+ }
+};
+function load(d){SITES=d.sites;DAYS=d.days;WEEK_PUB=d.weekPub;document.getElementById('snap').textContent=d.snap||''}
+
+/* 一致度：最高気温と降水確率のばらつきから判定 */
+function agree(day){
+  const s=Object.values(day.src), his=s.map(x=>x.hi).filter(v=>typeof v==='number');
+  const pops=s.map(x=>parseInt((String(x.pop).match(/\d+/g)||[]).pop())).filter(n=>!isNaN(n));
+  const hs=Math.max(...his)-Math.min(...his), ps=pops.length>1?Math.max(...pops)-Math.min(...pops):0;
+  if(hs<=1.5&&ps<=30) return {t:'高',c:'#7cd3a4'};
+  if(hs<=4&&ps<=40) return {t:'中',c:'#F6DE7D'};
+  return {t:'低',c:'#f0a07e'};
+}
+const f=v=>typeof v!=='number'?v:Number.isInteger(v)?v:v.toFixed(1);
+const MOOD=ic=>({sun:'sun','sun-cloud':'sun','sun-then-cloud':'sun','cloud-sun':'cs','cloud-then-sun':'cs',cloud:'cl','cloud-rain':'rn',rain:'rn','rain-then-sun':'rn',moon:'rn'}[ic]||'cl');
+const EN=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const JA='日月火水木金土';
+
+/* ---------- 描画 ---------- */
+const $=id=>document.getElementById(id);
+let cur=0, bgOn=1;
+function setBg(mood){
+  const next=bgOn===1?$('bg2'):$('bg1'), prev=bgOn===1?$('bg1'):$('bg2');
+  next.className='bg g-'+mood; next.style.opacity=1; prev.style.opacity=0; bgOn=bgOn===1?2:1;
+  document.documentElement.classList.toggle('w-sun',mood==='sun');
+}
+function show(i){
+  cur=Math.max(0,Math.min(DAYS.length-1,i));
+  const d=DAYS[cur], a=agree(d), ji=JA.indexOf(d.dow[0]);
+  setBg(MOOD(d.ic));
+  $('day').innerHTML=`${EN[ji]||''}<small>${d.m}月${d.d}日</small>${cur===0?'<span class="tag">今日</span>':cur===1?'<span class="tag">明日</span>':''}`;
+  $('hi').textContent=f(d.hi); $('lo').textContent=f(d.lo);
+  $('wxic').innerHTML=icon(d.ic,'wxic',1.4);
+  $('wx').textContent=d.wx;
+  $('chip').innerHTML=`<span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}`;
+  $('prev').disabled=cur===0; $('next').disabled=cur===DAYS.length-1;
+  $('dots').innerHTML=DAYS.map((x,k)=>`<button role="tab" aria-current="${k===cur}" aria-label="${x.m}月${x.d}日"><i></i></button>`).join('');
+  $('dots').querySelectorAll('button').forEach((b,k)=>b.addEventListener('click',()=>show(k)));
+  let low='';
+  if(d.strip) low+=`<div class="strip">${d.strip.map(s=>`<div><span class="h">${s[0]}時</span>${icon(s[1],'',2.4)}<span class="tt">${s[2]}°</span></div>`).join('')}</div>`;
+  if(d.tips) low+=`<div class="tips" style="--n:${d.tips.length}">${d.tips.map(t=>`<div class="tip">${icon(t.ic,'',2)}<span>${t.k}</span><b>${t.v}</b><span class="lv" aria-label="必要度 ${t.lv}/3">${[1,2,3].map(n=>`<i class="${n<=t.lv?'on':''}"></i>`).join('')}</span></div>`).join('')}</div>`;
+  else low+=`<p class="note">${d.note}</p>`;
+  low+=`<button class="up" id="up">${'<svg class="li" viewBox="0 0 14 14" stroke-width="1.6"><path d="M2 9l5-5 5 5"/></svg>'}タップ・上スワイプで4社の見立て</button>`;
+  $('lower').innerHTML=low;
+  $('up').addEventListener('click',()=>openSheet(cur));
+}
+$('prev').addEventListener('click',()=>show(cur-1));
+$('next').addEventListener('click',()=>show(cur+1));
+$('hero').addEventListener('click',()=>openSheet(cur));
+$('hero2').addEventListener('click',()=>openSheet(cur));
+document.addEventListener('keydown',e=>{
+  if(sheet.classList.contains('on')){if(e.key==='Escape')closeSheet();return}
+  if(e.key==='ArrowLeft')show(cur-1); if(e.key==='ArrowRight')show(cur+1); if(e.key==='ArrowUp')openSheet(cur);
+});
+let sx=null,sy=null;
+$('stage').addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
+$('stage').addEventListener('touchend',e=>{if(sx===null)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+  if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)) show(cur+(dx<0?1:-1)); else if(dy<-60&&Math.abs(dy)>Math.abs(dx)) openSheet(cur); sx=sy=null});
+
+/* ---------- 4社の見立てシート ---------- */
+const sheet=$('sheet'),scrim=$('scrim'),inner=$('sheet-in');
+let lastFocus=null;
+function openSheet(i){
+  const d=DAYS[i];
+  inner.innerHTML=`<div class="grab"></div>
+   <div class="sh-head"><div><h2 id="sh-title">${d.m}月${d.d}日（${d.dow}）の4社の見立て</h2><p>結論：${d.wx}・${f(d.hi)}℃ / ${f(d.lo)}℃</p></div><button class="x" id="close" aria-label="閉じる">✕</button></div>
+   ${Object.entries(d.src).map(([k,s])=>{const S=SITES[k];return `<div class="src" style="--c:${S.c}">
+      ${icon(s.ic,'',2.2)}<div><div class="nm">${S.name}<small>${s.pub||WEEK_PUB[k]}</small></div><div class="ws">${s.wx}</div></div>
+      <div class="tv"><b>${f(s.hi)}°</b><span>${f(s.lo)}°</span><small>${s.pop}</small></div>
+      <div class="nt">${s.nt?s.nt+' ':''}<a href="${S.url}" target="_blank" rel="noopener">サイトで見る</a></div></div>`}).join('')}
+   <div class="why"><b>見立ての差</b>${d.why}</div>
+   <div class="src-foot">${d.note}</div>`;
+  lastFocus=document.activeElement;
+  sheet.classList.remove('on');void sheet.offsetWidth;
+  sheet.classList.add('on');scrim.classList.add('on');sheet.scrollTop=0;
+  $('close').addEventListener('click',closeSheet);
+  $('close').focus({preventScroll:true});
+}
+function closeSheet(){sheet.classList.remove('on');scrim.classList.remove('on');lastFocus&&lastFocus.focus({preventScroll:true})}
+scrim.addEventListener('click',closeSheet);
+let y0=null;sheet.addEventListener('touchstart',e=>{if(sheet.scrollTop<=0)y0=e.touches[0].clientY},{passive:true});
+sheet.addEventListener('touchend',e=>{if(y0!==null&&e.changedTouches[0].clientY-y0>80)closeSheet();y0=null});
+
+load(FALLBACK);show(0);
+fetch('data.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.days){load(d);show(Math.min(cur,DAYS.length-1))}}).catch(()=>{});
+</script>
+
+</body></html>
