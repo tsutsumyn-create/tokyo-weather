@@ -42,7 +42,9 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 
 .stage{height:100%;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);max-width:440px;margin:0 auto;display:flex;flex-direction:column;align-items:center;
   touch-action:pan-y;user-select:none}
-.bar{width:100%;display:flex;justify-content:space-between;font-size:.74rem;color:var(--fg-soft)}
+.bar{width:100%;display:flex;justify-content:space-between;gap:8px;font-size:.74rem;color:var(--fg-soft)}
+.live{margin-left:8px;color:var(--fg)}
+.live b{font-family:var(--f-num);font-weight:400;font-size:.9rem}
 .day{font-family:var(--f-num);font-weight:300;font-size:clamp(1.4rem,4.2vh,1.9rem);letter-spacing:.04em;margin-top:clamp(4px,1.4vh,14px);display:flex;align-items:baseline;gap:8px}
 .day small{font-family:var(--f-ui);font-size:.82rem;color:var(--fg-soft);letter-spacing:0}
 .day .tag{font-family:var(--f-ui);font-size:.68rem;border:1px solid var(--fg-line);border-radius:99px;padding:0 8px;letter-spacing:0;align-self:center}
@@ -62,7 +64,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .dots button{width:18px;height:18px;display:grid;place-items:center}
 .dots i{width:6px;height:6px;border-radius:50%;border:1.5px solid var(--fg-soft);display:block}
 .dots button[aria-current="true"] i{background:var(--dot);border-color:var(--dot);transform:scale(1.25)}
-.chip{font-size:.72rem;margin-top:6px;border:1px solid var(--fg-line);border-radius:99px;padding:2px 12px;display:flex;gap:8px;align-items:center}
+.chip{flex-wrap:wrap;justify-content:center;row-gap:2px;font-size:.72rem;margin-top:6px;border:1px solid var(--fg-line);border-radius:99px;padding:2px 12px;display:flex;gap:8px;align-items:center}
 .chip i{width:7px;height:7px;border-radius:50%;display:inline-block}
 
 .lower{margin-top:auto;width:100%;display:flex;flex-direction:column;gap:clamp(8px,1.6vh,16px)}
@@ -123,7 +125,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 
 <div class="bg" id="bg1"></div><div class="bg" id="bg2" style="opacity:0"></div>
 <main class="stage" id="stage">
-  <div class="bar"><span>東京23区</span><span id="snap">10/27 10時台取得</span></div>
+  <div class="bar"><span>東京23区<span class="live" id="live"></span></span><span id="snap">10/27 10時台取得</span></div>
   <div class="day" id="day"></div>
   <button class="hero" id="hero" aria-label="4社の見立てを見る">
     <span class="t"><span class="big" id="hi"></span><span class="deg">°</span><span class="lo">最低<b id="lo"></b></span></span>
@@ -694,6 +696,11 @@ function agree(day){
 }
 const f=v=>typeof v!=='number'?v:Number.isInteger(v)?v:v.toFixed(1);
 const MOOD=ic=>({sun:'sun','sun-cloud':'sun','sun-then-cloud':'sun','cloud-sun':'cs','cloud-then-sun':'cs',cloud:'cl','cloud-rain':'rn',rain:'rn','rain-then-sun':'rn',moon:'rn'}[ic]||'cl');
+function trend(d){
+  if(!d.prev||typeof d.prev.hi!=='number'||typeof d.hi!=='number') return '';
+  const df=Math.round((d.hi-d.prev.hi)*10)/10;
+  return Math.abs(df)>=1?`<span>前回比 最高${df>0?'↑':'↓'}${Math.abs(df)}℃</span>`:'<span>予報 安定</span>';
+}
 const EN=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const JA='日月火水木金土';
 
@@ -713,7 +720,7 @@ function show(i){
   $('hi').textContent=f(d.hi); $('lo').textContent=f(d.lo);
   $('wxic').innerHTML=icon(d.ic,'wxic',1.4);
   $('wx').textContent=d.wx;
-  $('chip').innerHTML=`<span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}`;
+  $('chip').innerHTML=`<span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}${trend(d)}`;
   $('prev').disabled=cur===0; $('next').disabled=cur===DAYS.length-1;
   $('dots').innerHTML=DAYS.map((x,k)=>`<button role="tab" aria-current="${k===cur}" aria-label="${x.m}月${x.d}日"><i></i></button>`).join('');
   $('dots').querySelectorAll('button').forEach((b,k)=>b.addEventListener('click',()=>show(k)));
@@ -744,7 +751,7 @@ let lastFocus=null;
 function openSheet(i){
   const d=DAYS[i];
   inner.innerHTML=`<div class="grab"></div>
-   <div class="sh-head"><div><h2 id="sh-title">${d.m}月${d.d}日（${d.dow}）の4社の見立て</h2><p>結論：${d.wx}・${f(d.hi)}℃ / ${f(d.lo)}℃</p></div><button class="x" id="close" aria-label="閉じる">✕</button></div>
+   <div class="sh-head"><div><h2 id="sh-title">${d.m}月${d.d}日（${d.dow}）の4社の見立て</h2><p>結論：${d.wx}・${f(d.hi)}℃ / ${f(d.lo)}℃</p>${d.prev?`<p>前回（${d.prev.at}）：${d.prev.wx}・${f(d.prev.hi)}℃ / ${f(d.prev.lo)}℃・降水${d.prev.pop}%</p>`:''}</div><button class="x" id="close" aria-label="閉じる">✕</button></div>
    ${Object.entries(d.src).map(([k,s])=>{const S=SITES[k];return `<div class="src" style="--c:${S.c}">
       ${icon(s.ic,'',2.2)}<div><div class="nm">${S.name}<small>${s.pub||WEEK_PUB[k]}</small></div><div class="ws">${s.wx}</div></div>
       <div class="tv"><b>${f(s.hi)}°</b><span>${f(s.lo)}°</span><small>${s.pop}</small></div>
@@ -762,6 +769,19 @@ scrim.addEventListener('click',closeSheet);
 let y0=null;sheet.addEventListener('touchstart',e=>{if(sheet.scrollTop<=0)y0=e.touches[0].clientY},{passive:true});
 sheet.addEventListener('touchend',e=>{if(y0!==null&&e.changedTouches[0].clientY-y0>80)closeSheet();y0=null});
 
+/* ---------- いまの気温（気象庁アメダス 東京） ---------- */
+async function live(){
+  try{
+    const t=(await (await fetch('https://www.jma.go.jp/bosai/amedas/data/latest_time.txt',{cache:'no-store'})).text()).trim();
+    const k=t.slice(0,4)+t.slice(5,7)+t.slice(8,10)+t.slice(11,13)+t.slice(14,16)+'00';
+    const m=await (await fetch(`https://www.jma.go.jp/bosai/amedas/data/map/${k}.json`,{cache:'no-store'})).json();
+    const o=m['44132']; if(!o||!o.temp) return;
+    const rain=o.precipitation10m&&o.precipitation10m[0]>0;
+    $('live').innerHTML=`いま <b>${o.temp[0].toFixed(1)}°</b> ${t.slice(11,16)}${rain?'・雨':''}`;
+  }catch(e){}
+}
+live(); setInterval(live,10*60*1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)live()});
 load(FALLBACK);show(0);
 fetch('data.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.days){load(d);show(Math.min(cur,DAYS.length-1))}}).catch(()=>{});
 </script>
