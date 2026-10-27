@@ -693,7 +693,21 @@ const FALLBACK={
   "yahoo": "26日08:00発表"
  }
 };
-function load(d){SITES=d.sites;DAYS=d.days;WEEK_PUB=d.weekPub;document.getElementById('snap').textContent=(d.snap||'')+' · v1.0'}
+/* 端末の日付を基準に、過ぎた日を外して「今日」から並べる（年またぎも考慮） */
+function dayKey(m,dd){const n=new Date(),y=n.getFullYear();let t=new Date(y,m-1,dd);
+  if(t-n>180*864e5)t=new Date(y-1,m-1,dd); else if(n-t>180*864e5)t=new Date(y+1,m-1,dd); return t}
+function todayStart(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate())}
+function relDay(d){return Math.round((dayKey(d.m,d.d)-todayStart())/864e5)}
+let RAW=null;
+function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
+  const all=d.days, fut=all.filter(x=>relDay(x)>=0);
+  DAYS=fut.length?fut:all.slice(-1);
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.0.1'}
+/* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
+let shownToday=todayStart().getTime();
+function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
+setInterval(rollDate,60*1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)rollDate()});
 
 /* 一致度：最高気温と降水確率のばらつきから判定 */
 function agree(day){
@@ -727,7 +741,7 @@ function panelHTML(d,i){
   if(d.strip) low+=`<div class="strip">${d.strip.map(s=>`<div><span class="h">${s[0]}時</span>${icon(s[1],'',2.4)}<span class="tt">${s[2]}°</span></div>`).join('')}</div>`;
   if(d.tips) low+=`<div class="tips" style="--n:${d.tips.length}">${d.tips.map(t=>`<div class="tip">${icon(t.ic,'',2)}<span>${t.k}</span><b>${t.v}</b><span class="lv" aria-label="必要度 ${t.lv}/3">${[1,2,3].map(n=>`<i class="${n<=t.lv?'on':''}"></i>`).join('')}</span></div>`).join('')}</div>`;
   else low+=`<p class="note">${d.note}</p>`;
-  return `<div class="day">${EN[ji]||''}<small>${d.m}月${d.d}日</small>${i===0?'<span class="tag">今日</span>':i===1?'<span class="tag">明日</span>':''}</div>
+  return `<div class="day">${EN[ji]||''}<small>${d.m}月${d.d}日</small>${(r=>r===0?'<span class="tag">今日</span>':r===1?'<span class="tag">明日</span>':'')(relDay(d))}</div>
     <button class="hero" data-open aria-label="4社の見立てを見る"><span class="t"><span class="big pz">${f(d.hi)}</span><span class="deg">°</span><span class="lo">最低<b>${f(d.lo)}</b></span></span></button>
     <button class="hero icw" data-open aria-label="4社の見立てを見る">${icon(d.ic,'wxic',1.4)}</button>
     <div class="wx">${d.wx}</div>
