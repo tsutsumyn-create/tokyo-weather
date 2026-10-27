@@ -684,7 +684,7 @@ const FALLBACK={
   "yahoo": "26日08:00発表"
  }
 };
-function load(d){SITES=d.sites;DAYS=d.days;WEEK_PUB=d.weekPub;document.getElementById('snap').textContent=d.snap||''}
+function load(d){SITES=d.sites;DAYS=d.days;WEEK_PUB=d.weekPub;document.getElementById('snap').textContent=(d.snap||'')+' · v3'}
 
 /* 一致度：最高気温と降水確率のばらつきから判定 */
 function agree(day){
