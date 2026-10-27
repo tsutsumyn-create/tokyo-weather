@@ -32,7 +32,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 
 #scene{position:fixed;inset:0;overflow:hidden;transform-origin:50% 0;will-change:transform}
-.bg{position:absolute;inset:0}
+.bg{position:absolute;inset:0;will-change:opacity;transform:translateZ(0)}
 .g-sun{background:linear-gradient(180deg,#f2cc55 0%,#F6DE7D 45%,#F5DEB3 100%)}
 .g-cs{background:linear-gradient(180deg,#8d9eac 0%,#64C6C7 100%)}
 .g-cl{background:linear-gradient(180deg,#a3b0bb 0%,#708090 100%)}
@@ -48,7 +48,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 
 .vp{position:relative;flex:1;overflow:hidden;touch-action:none}
 .track{display:flex;height:100%;will-change:transform}
-.panel{flex:0 0 100%;height:100%;display:flex;flex-direction:column;align-items:center;color:var(--fg);
+.panel{will-change:transform,opacity;backface-visibility:hidden;flex:0 0 100%;height:100%;display:flex;flex-direction:column;align-items:center;color:var(--fg);
   padding:clamp(4px,1.2vh,12px) max(16px,env(safe-area-inset-right,0px)) 0 var(--gut)}
 .panel.empty{visibility:hidden}
 .day{font-family:var(--f-num);font-weight:300;font-size:clamp(1.4rem,4.2vh,1.9rem);letter-spacing:.04em;display:flex;align-items:baseline;gap:8px}
@@ -60,7 +60,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .deg{font-family:var(--f-num);font-weight:200;font-size:clamp(32px,6vh,50px);margin-top:.15em}
 .lo{display:flex;flex-direction:column;margin:auto 0 .5em 6px;font-size:.78rem;color:var(--fg-soft)}
 .lo b{font-family:var(--f-num);font-weight:300;font-size:clamp(1.6rem,4.4vh,2.2rem);color:var(--fg);line-height:1.1}
-.icw{margin-top:clamp(0px,1vh,10px)}
+.icw{will-change:transform;margin-top:clamp(0px,1vh,10px)}
 .wxic{width:clamp(96px,17vh,140px);height:clamp(96px,17vh,140px)}
 .wx{font-weight:300;font-size:clamp(1.15rem,3.1vh,1.5rem);letter-spacing:.04em;margin-top:2px;text-align:center;text-wrap:balance}
 .chip{font-size:.72rem;margin-top:8px;border:1px solid var(--fg-line);border-radius:99px;padding:2px 12px;display:flex;flex-wrap:wrap;justify-content:center;gap:2px 8px;align-items:center}
@@ -684,7 +684,7 @@ const FALLBACK={
   "yahoo": "26日08:00発表"
  }
 };
-function load(d){SITES=d.sites;DAYS=d.days;WEEK_PUB=d.weekPub;document.getElementById('snap').textContent=(d.snap||'')+' · v3'}
+function load(d){SITES=d.sites;DAYS=d.days;WEEK_PUB=d.weekPub;document.getElementById('snap').textContent=(d.snap||'')+' · v4'}
 
 /* 一致度：最高気温と降水確率のばらつきから判定 */
 function agree(day){
@@ -704,7 +704,7 @@ const JA='日月火水木金土';
 const $=id=>document.getElementById(id);
 const root=document.documentElement, vp=$('vp'), track=$('track'), scene=$('scene');
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
-let cur=0, x=0, W=1, hAnim=null;
+let cur=0, x=0, W=1, hAnim=null, PR=[], lastSun=null, lastOver=-1;
 const STEP=25;
 
 function trend(d){
@@ -734,6 +734,8 @@ function renderPanels(){
     el.innerHTML=panelHTML(d,i);
   });
   track.children[1].querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',()=>openSheet(cur)));
+  PR=[...track.children].map(el=>({el,pz:el.querySelector('.pz'),ic:el.querySelector('.icw')}));
+  lastSun=null;
   $('bgA').className='bg g-'+moodOf(cur);
   $('prev').disabled=cur===0; $('next').disabled=cur===DAYS.length-1;
   $('dots').querySelectorAll('button').forEach((b,k)=>b.setAttribute('aria-current',k===cur));
@@ -753,21 +755,22 @@ function setX(nx){
   x=nx;
   track.style.transform=`translate3d(${-W+x}px,0,0)`;
   const p=x/W, dir=x<0?1:-1, nm=moodOf(cur+dir), over=$('bgB');
-  if(nm&&p!==0){ if(over.dataset.m!==nm){over.className='bg g-'+nm;over.dataset.m=nm} over.style.opacity=Math.min(1,Math.abs(p)); }
-  else over.style.opacity=0;
-  [...track.children].forEach((el,k)=>{
+  const ov=(nm&&p!==0)?Math.min(1,Math.abs(p)):0;
+  if(nm&&p!==0&&over.dataset.m!==nm){over.className='bg g-'+nm;over.dataset.m=nm}
+  if(ov!==lastOver){over.style.opacity=ov;lastOver=ov}
+  PR.forEach((r,k)=>{
     const off=(k-1)*W+x, q=Math.min(1,Math.abs(off)/W);
-    el.style.opacity=1-q*.6;
-    const b=el.querySelector('.pz'); if(b) b.style.transform=`translate3d(${-off*.2}px,0,0)`;
-    const ic=el.querySelector('.icw'); if(ic) ic.style.transform=`translate3d(${-off*.08}px,0,0) scale(${1-q*.12})`;
+    r.el.style.opacity=1-q*.6;
+    if(r.pz) r.pz.style.transform=`translate3d(${-off*.2}px,0,0)`;
+    if(r.ic) r.ic.style.transform=`translate3d(${-off*.08}px,0,0) scale(${1-q*.12})`;
   });
-  const vis=(Math.abs(p)>.5&&nm)?nm:moodOf(cur);
-  root.classList.toggle('w-sun',vis==='sun');
+  const vis=(Math.abs(p)>.5&&nm)?nm:moodOf(cur), sun=vis==='sun';
+  if(sun!==lastSun){root.classList.toggle('w-sun',sun);lastSun=sun}
   const pos=Math.max(0,Math.min(DAYS.length-1,cur-p));
   const ind=$('ind'); if(ind){const stretch=1+Math.min(.8,Math.abs(p)*1.6*(1-Math.abs(p)));ind.style.transform=`translateX(${pos*STEP}px) scaleX(${stretch})`}
 }
 /* バネ（質量1・やや強めの減衰）。初速は指を離した瞬間の速度を引き継ぐ */
-function spring(from,to,v0,step,done,k=320,c=34){
+function spring(from,to,v0,step,done,k=420,c=40){
   if(REDUCED){step(to);done&&done();return null}
   let pos=from,vel=v0,last=performance.now(),id;
   const tick=now=>{
@@ -803,7 +806,7 @@ function measure(){W=vp.clientWidth||1;setX(0);placeArrows()}
 addEventListener('resize',measure);
 
 /* ---------- 指の動き ---------- */
-let g=null;
+let g=null, pendX=null, raf=0;
 vp.addEventListener('pointerdown',e=>{
   if(e.target.closest('.nav'))return;
   hAnim&&hAnim.cancel(); sAnim&&sAnim.cancel();
@@ -812,25 +815,30 @@ vp.addEventListener('pointerdown',e=>{
 vp.addEventListener('pointermove',e=>{
   if(!g||e.pointerId!==g.id)return;
   const dx=e.clientX-g.x0, dy=e.clientY-g.y0;
-  if(!g.axis){ if(Math.hypot(dx,dy)<7)return; g.axis=Math.abs(dx)>Math.abs(dy)?'x':(dy<0?'y':'none'); vp.setPointerCapture(e.pointerId);
+  if(!g.axis){ if(Math.hypot(dx,dy)<5)return; g.axis=Math.abs(dx)>Math.abs(dy)?'x':(dy<0?'y':'none'); vp.setPointerCapture(e.pointerId);
     if(g.axis==='y'){prepareSheet(cur)} }
-  g.samples.push([e.timeStamp,e.clientX,e.clientY]); if(g.samples.length>6)g.samples.shift();
+  g.samples.push([e.timeStamp,e.clientX,e.clientY]); if(g.samples.length>12)g.samples.shift();
   if(g.axis==='x'){
     let nx=g.bx+dx;
     if((cur===0&&nx>0)||(cur===DAYS.length-1&&nx<0)) nx=rubber(nx,W*.5);
-    setX(nx);
+    pendX=nx; if(!raf) raf=requestAnimationFrame(()=>{raf=0; if(pendX!==null){setX(pendX);pendX=null}});
   }else if(g.axis==='y'){
     let y=sheetH+dy; if(y<0)y=-rubber(-y,60); setSheet(y);
   }
 });
 function release(e){
   if(!g||e.pointerId!==g.id)return;
-  const s=g.samples, a=s[0], b=s[s.length-1], dt=Math.max(1,b[0]-a[0]);
-  const vx=(b[1]-a[1])/dt*1000, vy=(b[2]-a[2])/dt*1000;
+  if(raf){cancelAnimationFrame(raf);raf=0;if(pendX!==null){setX(pendX);pendX=null}}
+  const s=g.samples, b=s[s.length-1]; let a=s[0];
+  for(const q of s){ if(b[0]-q[0]<=80){a=q;break} }
+  const dt=Math.max(8,b[0]-a[0]);
+  const clampV=v=>Math.max(-4000,Math.min(4000,v));
+  const vx=clampV((b[1]-a[1])/dt*1000), vy=clampV((b[2]-a[2])/dt*1000);
   if(g.axis==='x'){
     const p=x/W;
-    if((p<-.3||vx<-450)&&DAYS[cur+1]) go(1,vx);
-    else if((p>.3||vx>450)&&DAYS[cur-1]) go(-1,vx);
+    const flickL=vx<-180&&p<-.03, flickR=vx>180&&p>.03;
+    if((p<-.15||flickL)&&DAYS[cur+1]) go(1,vx);
+    else if((p>.15||flickR)&&DAYS[cur-1]) go(-1,vx);
     else hAnim=spring(x,0,vx,setX);
   }else if(g.axis==='y'){
     if(sheetY<sheetH*.75||vy<-500) openSheet(cur,vy); else closeSheet(vy);
