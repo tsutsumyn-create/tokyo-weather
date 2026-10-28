@@ -711,7 +711,7 @@ let RAW=null;
 function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
   const all=d.days, fut=all.filter(x=>relDay(x)>=0);
   DAYS=fut.length?fut:all.slice(-1);
-  document.getElementById('snap').textContent=(d.snap||'')+' · v1.1'}
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.1.1'}
 /* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
 let shownToday=todayStart().getTime();
 function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
@@ -739,11 +739,14 @@ const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let cur=0, x=0, W=1, hAnim=null, PR=[], lastSun=null, lastOver=-1;
 const STEP=25;
 
-const PLV=['','影響小','注意','警戒'];
-function pressTip(d){
-  const p=d.press; if(!p) return null;
-  return {ic:'baro',k:'気圧',v:`${p.dir==='down'?'低下':p.dir==='up'?'上昇':''}${p.lv>=2?'・'+PLV[p.lv]:''}`||'安定',lv:p.lv};
+/* 気圧は「体調への注意度」で表す：下がる日ほど注意、上がる（回復する）日は軽め */
+function pressInfo(p){
+  if(!p) return null;
+  if(p.dir==='down') return {v:['安定','やや下がる','下がる','大きく下がる'][p.lv]||'下がる',lv:p.lv,chip:p.lv>=2,txt:`気圧が${['',  'やや下がる','下がる','大きく下がる'][p.lv]}日。体調に注意`};
+  if(p.dir==='up') return {v:'回復',lv:p.lv>=2?1:0,chip:false,txt:'低気圧が抜けて、気圧が上がる日'};
+  return {v:'安定',lv:0,chip:false,txt:'気圧の変化は小さい日'};
 }
+function pressTip(d){const i=pressInfo(d.press); return i?{ic:'baro',k:'気圧',v:i.v,lv:i.lv}:null}
 function tipsOf(d){
   if(!d.tips) return null;
   const t=d.tips.filter(x=>x.ic!=='wind'), pt=pressTip(d);
@@ -767,7 +770,7 @@ function panelHTML(d,i){
     <i class="sp" style="flex-grow:.3;max-height:36px"></i>
     <button class="hero icw" data-open aria-label="4社の見立てを見る">${icon(d.ic,'wxic',1.4)}</button>
     <div class="wx">${d.wx}</div>
-    <div class="chip"><span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}${!d.tips&&d.press&&d.press.lv>=2?`<span>気圧${d.press.dir==='down'?'低下':'変化'} ${PLV[d.press.lv]}</span>`:''}${trend(d)}</div>
+    <div class="chip"><span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}${!d.tips&&pressInfo(d.press)&&pressInfo(d.press).chip?`<span>気圧が${pressInfo(d.press).v}</span>`:''}${trend(d)}</div>
     <i class="sp" style="flex-grow:1;max-height:90px"></i>
     <div class="lower">${low}</div>
     <i class="sp" style="flex-grow:.55"></i>`;
@@ -943,7 +946,7 @@ function prepareSheet(i,force){
      <button class="x" id="close" aria-label="閉じる"><svg class="li" viewBox="0 0 18 18" stroke-width="1.4"><path d="M3 3l12 12M15 3L3 15"/></svg></button></div>
    <div class="sh-sum"><div class="tmp">${f(d.hi)}°<span>${f(d.lo)}°</span></div><div class="w">${d.wx}<br>降水 ${d.pop}%</div></div>
    ${d.prev?`<div class="sh-prev">前回（${d.prev.at}）${d.prev.wx}・${f(d.prev.hi)}° / ${f(d.prev.lo)}°・降水${d.prev.pop}%</div>`:'<div class="sh-prev"></div>'}
-   ${d.press?`<div class="sh-press">気圧　${d.press.dir==='down'?'下降':d.press.dir==='up'?'上昇':'変化なし'}・影響度 ${['','小','中','大'][d.press.lv]}${d.press.hi?`　${d.press.lo}〜${d.press.hi}hPa`:''}<span>${(RAW&&RAW.pressPub)||'tenki.jp 気圧予報'}</span></div>`:''}
+   ${d.press?`<div class="sh-press">気圧　${pressInfo(d.press).txt}${d.press.hi?`（${d.press.dir==='up'?d.press.lo+'→'+d.press.hi:d.press.dir==='down'?d.press.hi+'→'+d.press.lo:d.press.lo+'〜'+d.press.hi}hPa）`:''}<span>${(RAW&&RAW.pressPub)||'tenki.jp 気圧予報'}・バーは体調への注意度</span></div>`:''}
    <div class="rows">${Object.entries(d.src).map(([k,s])=>{const S=SITES[k];return `<div class="row2">
       <div class="nm"><i style="background:${S.c}"></i><span>${S.name}<span class="ws">${s.wx}</span></span></div>
       ${icon(s.ic,'',1.8)}<div class="tv">${f(s.hi)} / ${f(s.lo)}</div><div class="pp">${pp(s.pop)}</div>
