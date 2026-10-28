@@ -121,6 +121,8 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .sh-sum .tmp span{font-size:1.4rem;color:var(--s-soft);margin-left:6px}
 .sh-sum .w{font-weight:300;font-size:.92rem;padding-bottom:4px}
 .sh-prev{font-size:.72rem;color:var(--s-soft);margin-bottom:10px}
+.sh-press{font-size:.78rem;margin:-2px 0 12px;font-weight:300}
+.sh-press span{display:block;font-size:.66rem;color:var(--s-soft)}
 .rows{border-top:1px solid var(--s-line)}
 .row2{display:grid;grid-template-columns:1fr 30px auto 40px;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--s-line)}
 .row2 .nm{font-size:.86rem;font-weight:500;display:flex;align-items:center;gap:7px;min-width:0}
@@ -180,6 +182,7 @@ const ICON={
   'rain-then-sun':()=>cloudL(0,13,.5)+dropsS(8,36)+THEN+sunS(51,32,6),
   umbrella:()=>`<path d="M8 30a24 22 0 0 1 48 0z"/><path d="M32 30v16a5 5 0 0 1-10 0"/>`,
   jacket:()=>`<path d="M23 10l-11 6-5 15 7 2 3-7v24h30V26l3 7 7-2-5-15-11-6-9 7z"/><path d="M32 17v33"/>`,
+  baro:()=>`<circle cx="32" cy="34" r="20"/><path d="M18 34h3M43 34h3M32 20v3M22 24l2 2M42 24l-2 2"/><path d="M32 34l8-9"/><circle cx="32" cy="34" r="2"/>`,
   uv:()=>`<rect x="21" y="18" width="22" height="34" rx="6"/><rect x="26" y="9" width="12" height="9" rx="2"/><circle cx="32" cy="35" r="4"/>`,
   wind:()=>`<path d="M8 24h26a6 6 0 1 0-6-6"/><path d="M8 34h38a6 6 0 1 1-6 6"/><path d="M8 44h16"/>`,
   drop:()=>`<path d="M32 10C24 22 18 30 18 38a14 14 0 0 0 28 0c0-8-6-16-14-28z"/>`,
@@ -708,7 +711,7 @@ let RAW=null;
 function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
   const all=d.days, fut=all.filter(x=>relDay(x)>=0);
   DAYS=fut.length?fut:all.slice(-1);
-  document.getElementById('snap').textContent=(d.snap||'')+' · v1.0.3'}
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.1'}
 /* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
 let shownToday=todayStart().getTime();
 function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
@@ -736,6 +739,17 @@ const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let cur=0, x=0, W=1, hAnim=null, PR=[], lastSun=null, lastOver=-1;
 const STEP=25;
 
+const PLV=['','影響小','注意','警戒'];
+function pressTip(d){
+  const p=d.press; if(!p) return null;
+  return {ic:'baro',k:'気圧',v:`${p.dir==='down'?'低下':p.dir==='up'?'上昇':''}${p.lv>=2?'・'+PLV[p.lv]:''}`||'安定',lv:p.lv};
+}
+function tipsOf(d){
+  if(!d.tips) return null;
+  const t=d.tips.filter(x=>x.ic!=='wind'), pt=pressTip(d);
+  if(pt) t.push(pt);
+  return t;
+}
 function trend(d){
   if(!d.prev||typeof d.prev.hi!=='number'||typeof d.hi!=='number') return '';
   const df=Math.round((d.hi-d.prev.hi)*10)/10;
@@ -745,14 +759,15 @@ function panelHTML(d,i){
   const a=agree(d), ji=JA.indexOf(d.dow[0]);
   let low='';
   if(d.strip) low+=`<div class="strip">${d.strip.map(s=>`<div><span class="h">${s[0]}時</span>${icon(s[1],'',2.4)}<span class="tt">${s[2]}°</span></div>`).join('')}</div>`;
-  if(d.tips) low+=`<div class="tips" style="--n:${d.tips.length}">${d.tips.map(t=>`<div class="tip">${icon(t.ic,'',2)}<span>${t.k}</span><b>${t.v}</b><span class="lv" aria-label="必要度 ${t.lv}/3">${[1,2,3].map(n=>`<i class="${n<=t.lv?'on':''}"></i>`).join('')}</span></div>`).join('')}</div>`;
+  const TP=tipsOf(d);
+  if(TP) low+=`<div class="tips" style="--n:${TP.length}">${TP.map(t=>`<div class="tip">${icon(t.ic,'',2)}<span>${t.k}</span><b>${t.v}</b><span class="lv" aria-label="必要度 ${t.lv}/3">${[1,2,3].map(n=>`<i class="${n<=t.lv?'on':''}"></i>`).join('')}</span></div>`).join('')}</div>`;
   else low+=`<p class="note">${d.note}</p>`;
   return `<div class="day">${EN[ji]||''}<small>${d.m}月${d.d}日</small>${(r=>r===0?'<span class="tag">今日</span>':r===1?'<span class="tag">明日</span>':'')(relDay(d))}</div>
     <button class="hero" data-open aria-label="4社の見立てを見る"><span class="t"><span class="big pz">${f(d.hi)}</span><span class="deg">°</span><span class="lo">最低<b>${f(d.lo)}</b></span></span></button>
     <i class="sp" style="flex-grow:.3;max-height:36px"></i>
     <button class="hero icw" data-open aria-label="4社の見立てを見る">${icon(d.ic,'wxic',1.4)}</button>
     <div class="wx">${d.wx}</div>
-    <div class="chip"><span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}${trend(d)}</div>
+    <div class="chip"><span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}${!d.tips&&d.press&&d.press.lv>=2?`<span>気圧${d.press.dir==='down'?'低下':'変化'} ${PLV[d.press.lv]}</span>`:''}${trend(d)}</div>
     <i class="sp" style="flex-grow:1;max-height:90px"></i>
     <div class="lower">${low}</div>
     <i class="sp" style="flex-grow:.55"></i>`;
@@ -928,6 +943,7 @@ function prepareSheet(i,force){
      <button class="x" id="close" aria-label="閉じる"><svg class="li" viewBox="0 0 18 18" stroke-width="1.4"><path d="M3 3l12 12M15 3L3 15"/></svg></button></div>
    <div class="sh-sum"><div class="tmp">${f(d.hi)}°<span>${f(d.lo)}°</span></div><div class="w">${d.wx}<br>降水 ${d.pop}%</div></div>
    ${d.prev?`<div class="sh-prev">前回（${d.prev.at}）${d.prev.wx}・${f(d.prev.hi)}° / ${f(d.prev.lo)}°・降水${d.prev.pop}%</div>`:'<div class="sh-prev"></div>'}
+   ${d.press?`<div class="sh-press">気圧　${d.press.dir==='down'?'下降':d.press.dir==='up'?'上昇':'変化なし'}・影響度 ${['','小','中','大'][d.press.lv]}${d.press.hi?`　${d.press.lo}〜${d.press.hi}hPa`:''}<span>${(RAW&&RAW.pressPub)||'tenki.jp 気圧予報'}</span></div>`:''}
    <div class="rows">${Object.entries(d.src).map(([k,s])=>{const S=SITES[k];return `<div class="row2">
       <div class="nm"><i style="background:${S.c}"></i><span>${S.name}<span class="ws">${s.wx}</span></span></div>
       ${icon(s.ic,'',1.8)}<div class="tv">${f(s.hi)} / ${f(s.lo)}</div><div class="pp">${pp(s.pop)}</div>
@@ -982,7 +998,7 @@ async function live(){
     const m=await (await fetch(`https://www.jma.go.jp/bosai/amedas/data/map/${k}.json`,{cache:'no-store'})).json();
     const o=m['44132']; if(!o||!o.temp) return;
     const rain=o.precipitation10m&&o.precipitation10m[0]>0;
-    $('live').innerHTML=`いま <b>${o.temp[0].toFixed(1)}°</b> ${t.slice(11,16)}${rain?'・雨':''}`;
+    $('live').innerHTML=`いま <b>${o.temp[0].toFixed(1)}°</b>${o.normalPressure?` <b>${Math.round(o.normalPressure[0])}</b>hPa`:''} ${t.slice(11,16)}${rain?'・雨':''}`;
   }catch(e){}
 }
 live(); setInterval(live,10*60*1000);
