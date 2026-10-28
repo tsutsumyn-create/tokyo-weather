@@ -711,7 +711,7 @@ let RAW=null;
 function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
   const all=d.days, fut=all.filter(x=>relDay(x)>=0);
   DAYS=fut.length?fut:all.slice(-1);
-  document.getElementById('snap').textContent=(d.snap||'')+' · v1.1.1'}
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.2'}
 /* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
 let shownToday=todayStart().getTime();
 function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
@@ -739,14 +739,40 @@ const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let cur=0, x=0, W=1, hAnim=null, PR=[], lastSun=null, lastOver=-1;
 const STEP=25;
 
-/* 気圧は「体調への注意度」で表す：下がる日ほど注意、上がる（回復する）日は軽め */
-function pressInfo(p){
-  if(!p) return null;
-  if(p.dir==='down') return {v:['安定','やや下がる','下がる','大きく下がる'][p.lv]||'下がる',lv:p.lv,chip:p.lv>=2,txt:`気圧が${['',  'やや下がる','下がる','大きく下がる'][p.lv]}日。体調に注意`};
-  if(p.dir==='up') return {v:'回復',lv:p.lv>=2?1:0,chip:false,txt:'低気圧が抜けて、気圧が上がる日'};
-  return {v:'安定',lv:0,chip:false,txt:'気圧の変化は小さい日'};
+/* 気圧は5段階（高気圧〜低気圧）で表す。基準はその日の日中（6〜21時）の最低気圧。
+   値は Open-Meteo の1時間ごとの気圧予報をアプリが直接取得。取れないときは朝のデータと実測値で補う */
+const PLEV=[[1020,'高気圧',0],[1016,'やや高気圧',0],[1010,'通常',0],[1005,'やや低気圧',2],[-1,'低気圧',3]];
+const pLevel=h=>{for(const [t,n,lv] of PLEV) if(h>=t) return {name:n,lv}; return {name:'低気圧',lv:3}};
+let PX={}, livePress=null;
+function pressHPa(d){
+  const k=d.m+'/'+d.d; if(PX[k]) return PX[k].min;
+  const r=relDay(d);
+  if(r===0&&livePress) return livePress;
+  if(d.press&&typeof d.press.lo==='number'&&r>0) return d.press.lo;
+  return null;
 }
-function pressTip(d){const i=pressInfo(d.press); return i?{ic:'baro',k:'気圧',v:i.v,lv:i.lv}:null}
+function pressInfo(d){
+  const h=pressHPa(d), dir=d.press&&d.press.dir;
+  const trend=dir==='down'?'下がっていく':dir==='up'?'上がっていく':'';
+  if(h===null) return d.press&&dir==='down'?{v:'下がり気味',lv:Math.min(2,d.press.lv),chip:d.press.lv>=2,txt:'気圧は下がり気味（値は未取得）'}:null;
+  const L=pHev(h);
+  return {v:L.name,lv:L.lv,chip:L.name!=='通常',hpa:Math.round(h),txt:`${L.name}（日中の最低 ${Math.round(h)}hPa）${trend?'・気圧は'+trend:''}`};
+}
+const pHev=pLevel;
+function pressTip(d){const i=pressInfo(d); return i?{ic:'baro',k:'気圧',v:i.v,lv:i.lv}:null}
+async function loadPress(){
+  try{
+    const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude=35.69&longitude=139.75&hourly=pressure_msl&timezone=Asia%2FTokyo&forecast_days=10',{cache:'no-store'});
+    if(!r.ok) return; const j=await r.json(), now=Date.now(), acc={};
+    j.hourly.time.forEach((t,i)=>{
+      const hr=+t.slice(11,13), v=j.hourly.pressure_msl[i]; if(v==null||hr<6||hr>21) return;
+      if(new Date(t+':00+09:00').getTime()<now-3600e3) return;
+      const k=(+t.slice(5,7))+'/'+(+t.slice(8,10)); (acc[k]=acc[k]||[]).push(v);
+    });
+    for(const k in acc) PX[k]={min:Math.min(...acc[k]),max:Math.max(...acc[k])};
+    if(typeof renderPanels==='function'&&!sheetOpen) renderPanels();
+  }catch(e){}
+}
 function tipsOf(d){
   if(!d.tips) return null;
   const t=d.tips.filter(x=>x.ic!=='wind'), pt=pressTip(d);
@@ -770,7 +796,7 @@ function panelHTML(d,i){
     <i class="sp" style="flex-grow:.3;max-height:36px"></i>
     <button class="hero icw" data-open aria-label="4社の見立てを見る">${icon(d.ic,'wxic',1.4)}</button>
     <div class="wx">${d.wx}</div>
-    <div class="chip"><span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}${!d.tips&&pressInfo(d.press)&&pressInfo(d.press).chip?`<span>気圧が${pressInfo(d.press).v}</span>`:''}${trend(d)}</div>
+    <div class="chip"><span><i style="background:${a.c}"></i> 4社一致度 ${a.t}</span><span>降水 ${d.pop}%</span>${d.rel?`<span>信頼度 ${d.rel}</span>`:''}${!d.tips&&pressInfo(d)&&pressInfo(d).chip?`<span>${pressInfo(d).v}</span>`:''}${trend(d)}</div>
     <i class="sp" style="flex-grow:1;max-height:90px"></i>
     <div class="lower">${low}</div>
     <i class="sp" style="flex-grow:.55"></i>`;
@@ -946,7 +972,7 @@ function prepareSheet(i,force){
      <button class="x" id="close" aria-label="閉じる"><svg class="li" viewBox="0 0 18 18" stroke-width="1.4"><path d="M3 3l12 12M15 3L3 15"/></svg></button></div>
    <div class="sh-sum"><div class="tmp">${f(d.hi)}°<span>${f(d.lo)}°</span></div><div class="w">${d.wx}<br>降水 ${d.pop}%</div></div>
    ${d.prev?`<div class="sh-prev">前回（${d.prev.at}）${d.prev.wx}・${f(d.prev.hi)}° / ${f(d.prev.lo)}°・降水${d.prev.pop}%</div>`:'<div class="sh-prev"></div>'}
-   ${d.press?`<div class="sh-press">気圧　${pressInfo(d.press).txt}${d.press.hi?`（${d.press.dir==='up'?d.press.lo+'→'+d.press.hi:d.press.dir==='down'?d.press.hi+'→'+d.press.lo:d.press.lo+'〜'+d.press.hi}hPa）`:''}<span>${(RAW&&RAW.pressPub)||'tenki.jp 気圧予報'}・バーは体調への注意度</span></div>`:''}
+   ${pressInfo(d)?`<div class="sh-press">気圧　${pressInfo(d).txt}<span>高気圧 1020〜／やや高気圧 1016〜／通常 1010〜／やや低気圧 1005〜／低気圧 〜1004hPa</span></div>`:''}
    <div class="rows">${Object.entries(d.src).map(([k,s])=>{const S=SITES[k];return `<div class="row2">
       <div class="nm"><i style="background:${S.c}"></i><span>${S.name}<span class="ws">${s.wx}</span></span></div>
       ${icon(s.ic,'',1.8)}<div class="tv">${f(s.hi)} / ${f(s.lo)}</div><div class="pp">${pp(s.pop)}</div>
@@ -1000,11 +1026,13 @@ async function live(){
     const k=t.slice(0,4)+t.slice(5,7)+t.slice(8,10)+t.slice(11,13)+t.slice(14,16)+'00';
     const m=await (await fetch(`https://www.jma.go.jp/bosai/amedas/data/map/${k}.json`,{cache:'no-store'})).json();
     const o=m['44132']; if(!o||!o.temp) return;
+    if(o.normalPressure){const had=livePress!==null; livePress=o.normalPressure[0]; if(!had&&!Object.keys(PX).length&&!sheetOpen) renderPanels();}
     const rain=o.precipitation10m&&o.precipitation10m[0]>0;
     $('live').innerHTML=`いま <b>${o.temp[0].toFixed(1)}°</b>${o.normalPressure?` <b>${Math.round(o.normalPressure[0])}</b>hPa`:''} ${t.slice(11,16)}${rain?'・雨':''}`;
   }catch(e){}
 }
 live(); setInterval(live,10*60*1000);
+loadPress(); setInterval(loadPress,60*60*1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)live()});
 load(FALLBACK);W=vp.clientWidth||1;show(0);
 fetch('data.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.days){load(d);show(Math.min(cur,DAYS.length-1))}}).catch(()=>{});
