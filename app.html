@@ -138,6 +138,13 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .sh-note{font-size:.74rem;color:var(--s-soft);line-height:1.7;margin-top:14px;font-weight:300}
 .x:focus-visible,.row2 a:focus-visible{outline:2px solid var(--s-fg);outline-offset:2px}
 @media (max-height:640px){.strip{display:none}}
+/* 軽量モード（低電力モード等で描画が30fpsに制限されたとき自動で切替）：
+   レイヤーを減らし、奥行き・パララックス・色のにじみを省いて移動だけにする */
+html.lite .panel,html.lite .big,html.lite .icw{will-change:auto}
+html.lite .panel{opacity:1!important}
+html.lite .bar,html.lite .foot,html.lite .nav,html.lite .dots button i,html.lite .ind{transition:none}
+html.lite #scene.sunk{border-radius:0}
+html.lite .scrim{background:rgba(8,12,16,.55)}
 </style>
 </head><body>
 <div id="topband" aria-hidden="true"></div>
@@ -711,7 +718,7 @@ let RAW=null;
 function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
   const all=d.days, fut=all.filter(x=>relDay(x)>=0);
   DAYS=fut.length?fut:all.slice(-1);
-  document.getElementById('snap').textContent=(d.snap||'')+' · v1.2'}
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.3'+(LITE?'L':'')}
 /* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
 let shownToday=todayStart().getTime();
 function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
@@ -738,6 +745,70 @@ const root=document.documentElement, vp=$('vp'), track=$('track'), scene=$('scen
 const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let cur=0, x=0, W=1, hAnim=null, PR=[], lastSun=null, lastOver=-1;
 const STEP=25;
+
+/* ---------- 軽量モード判定 ----------
+   iPhoneの低電力モードではSafariの描画（requestAnimationFrame）が30fpsに制限され、
+   毎フレームJSで多数の要素を動かす通常モードはコマ落ちする。
+   起動時と復帰時にフレーム間隔を測り、30fps付近なら軽量モードにする。 */
+var LITE=false;
+function setLite(on){
+  if(on===LITE) return; LITE=on; root.classList.toggle('lite',on);
+  PR.forEach(r=>{r.el.style.opacity='';if(r.pz)r.pz.style.transform='';if(r.ic)r.ic.style.transform=''});
+  const s=$('snap'); if(s) s.textContent=s.textContent.replace(/ · v1\.3L?$/,' · v1.3'+(on?'L':''));
+}
+function probeFPS(){
+  if(document.hidden) return;
+  const ts=[]; let n=0;
+  const tick=t=>{ts.push(t); if(++n<36) requestAnimationFrame(tick); else {
+    const iv=ts.slice(6).map((v,i,a)=>i?v-a[i-1]:0).slice(1).sort((a,b)=>a-b);
+    const med=iv[iv.length>>1];
+    setLite(med>24);   // 60/120Hzなら8〜17ms、低電力モードは約33ms
+  }};
+  requestAnimationFrame(tick);
+}
+setTimeout(probeFPS,600);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(probeFPS,300)});
+
+/* バネの軌道を先に計算しておき、Web Animationsで合成スレッドに任せる（メインスレッドが詰まっても滑らか） */
+function springPath(from,to,v0,k,c){
+  const out=[from]; let p=from,v=v0; const h=1/240;
+  for(let f=0;f<180;f++){
+    for(let s=0;s<4;s++){const a=-k*(p-to)-c*v;v+=a*h;p+=v*h}
+    out.push(p);
+    if(Math.abs(p-to)<.4&&Math.abs(v)<8) break;
+  }
+  out[out.length-1]=to; return out;
+}
+/* parts: [[要素, 位置→スタイル]]。戻り値は途中停止時に現在位置を返す cancel() を持つ */
+function playPath(path,parts,done){
+  const dur=Math.max(16,(path.length-1)*1000/60), t0=performance.now();
+  const anims=parts.map(([el,fn])=>el.animate(path.map(fn),{duration:dur,easing:'linear'}));
+  let over=false;
+  const ctl={
+    pos(){const i=Math.min(path.length-1,Math.round((performance.now()-t0)/dur*(path.length-1)));return path[i]},
+    cancel(){if(over)return; over=true; const p=this.pos(); anims.forEach(a=>a.cancel()); this.onstop&&this.onstop(p)}
+  };
+  anims[0].onfinish=()=>{if(over)return; over=true; ctl.onend&&ctl.onend(); anims.forEach(a=>a.cancel()); done&&done()};
+  return ctl;
+}
+/* 横移動の着地アニメ（軽量モード） */
+function hSpring(to,v0,done){
+  if(!LITE||REDUCED) return spring(x,to,v0,setX,done);
+  const path=springPath(x,to,v0,420,40);
+  const sgn=Math.sign(to!==0?to:x)||1, nm=moodOf(cur-sgn), over=$('bgB');
+  if(nm&&over.dataset.m!==nm){over.className='bg g-'+nm;over.dataset.m=nm}
+  const ind=$('ind'), base=cur;
+  const parts=[[track,p=>({transform:`translate3d(${-W+p}px,0,0)`})]];
+  if(nm) parts.push([over,p=>({opacity:Math.min(1,Math.max(0,p*sgn/W))})]);
+  if(ind) parts.push([ind,p=>({transform:`translateX(${Math.max(0,Math.min(DAYS.length-1,base-p/W))*STEP}px)`})]);
+  const tc=nm?TOPC[nm]:null;
+  if(tc&&to!==0){const c='#'+tc.map(v=>v.toString(16).padStart(2,'0')).join('');
+    $('topband').animate([{backgroundColor:$('topband').style.backgroundColor||lastTop},{backgroundColor:c}],{duration:(path.length-1)*1000/60,easing:'ease-out'})}
+  const ctl=playPath(path,parts,()=>{});
+  ctl.onstop=p=>setX(p);
+  ctl.onend=()=>{setX(to);done&&done()};
+  return ctl;
+}
 
 /* 気圧は5段階（高気圧〜低気圧）で表す。基準はその日の日中（6〜21時）の最低気圧。
    値は Open-Meteo の1時間ごとの気圧予報をアプリが直接取得。取れないときは朝のデータと実測値で補う */
@@ -836,8 +907,9 @@ function setTop(a,b,t){
   const c='#'+A.map((v,i)=>Math.round(v+(B[i]-v)*t).toString(16).padStart(2,'0')).join('');
   if(c===lastTop) return; lastTop=c;
   document.getElementById('topband').style.backgroundColor=c;
-  document.documentElement.style.backgroundColor=c; document.body.style.backgroundColor=c;
-  if(metaTheme) metaTheme.setAttribute('content',c);
+  /* ページ全体の背景とテーマ色は止まったときだけ更新（毎フレーム変えると全面の再描画が走る） */
+  if(t===0||t===1){document.documentElement.style.backgroundColor=c; document.body.style.backgroundColor=c;
+    if(metaTheme) metaTheme.setAttribute('content',c);}
 }
 function setX(nx){
   x=nx;
@@ -846,7 +918,7 @@ function setX(nx){
   const ov=(nm&&p!==0)?Math.min(1,Math.abs(p)):0;
   if(nm&&p!==0&&over.dataset.m!==nm){over.className='bg g-'+nm;over.dataset.m=nm}
   if(ov!==lastOver){over.style.opacity=ov;lastOver=ov}
-  PR.forEach((r,k)=>{
+  if(!LITE) PR.forEach((r,k)=>{
     const off=(k-1)*W+x, q=Math.min(1,Math.abs(off)/W);
     r.el.style.opacity=1-q*.6;
     if(r.pz) r.pz.style.transform=`translate3d(${-off*.2}px,0,0)`;
@@ -856,7 +928,7 @@ function setX(nx){
   const vis=(Math.abs(p)>.5&&nm)?nm:moodOf(cur), sun=vis==='sun';
   if(sun!==lastSun){root.classList.toggle('w-sun',sun);lastSun=sun}
   const pos=Math.max(0,Math.min(DAYS.length-1,cur-p));
-  const ind=$('ind'); if(ind){const stretch=1+Math.min(.8,Math.abs(p)*1.6*(1-Math.abs(p)));ind.style.transform=`translateX(${pos*STEP}px) scaleX(${stretch})`}
+  const ind=$('ind'); if(ind){const stretch=LITE?1:1+Math.min(.8,Math.abs(p)*1.6*(1-Math.abs(p)));ind.style.transform=`translateX(${pos*STEP}px) scaleX(${stretch})`}
 }
 /* バネ（質量1・やや強めの減衰）。初速は指を離した瞬間の速度を引き継ぐ */
 function spring(from,to,v0,step,done,k=420,c=40){
@@ -875,8 +947,8 @@ function spring(from,to,v0,step,done,k=420,c=40){
 const rubber=(dx,dim)=>{const s=Math.sign(dx),a=Math.abs(dx);return s*(1-1/(a*.55/dim+1))*dim};
 function go(dir,v0=0){
   interrupt();
-  if(!DAYS[cur+dir]){hAnim=spring(x,0,v0,setX,()=>{hAnim=null});return}
-  hAnim=spring(x,-dir*W,v0,setX,()=>{hAnim=null;cur+=dir;renderPanels();setX(0)});
+  if(!DAYS[cur+dir]){hAnim=hSpring(0,v0,()=>{hAnim=null});return}
+  hAnim=hSpring(-dir*W,v0,()=>{hAnim=null;cur+=dir;renderPanels();setX(0)});
   if(hAnim) hAnim.commit=dir;
 }
 /* 動いている途中で指が触れたら止める。日付の切り替え中なら、その切り替えを確定させてから位置を引き継ぐ */
@@ -942,7 +1014,7 @@ function release(e){
     if(flickL||moved<-.12) dir=1; else if(flickR||moved>.12) dir=-1;
     else { const near=Math.round(-x/W); dir=Math.max(-1,Math.min(1,near)); }
     if(dir&&DAYS[cur+dir]) go(dir,vx);
-    else hAnim=spring(x,0,vx,setX,()=>{hAnim=null});
+    else hAnim=hSpring(0,vx,()=>{hAnim=null});
   }else if(g.axis==='y'){
     if(vy<-300||(vy<300&&sheetY<sheetH*.8)) openSheet(cur,vy); else closeSheet(vy);
   }
@@ -988,18 +1060,31 @@ function setSheet(y){
   const p=Math.max(0,Math.min(1,1-y/sheetH));
   scrim.style.opacity=p;
   const on=p>.002;
+  sunkOn(on);
+  /* 軽量モードでは画面全体の縮小（奥へ沈む演出）を省く */
+  scene.style.transform=on&&!LITE?`translate3d(0,${(p*12).toFixed(2)}px,0) scale(${(1-p*.06).toFixed(4)})`:'';
+}
+function sunkOn(on){
   if(on!==sunk){sunk=on;scene.classList.toggle('sunk',on);scrim.style.pointerEvents=on?'auto':'none';sheet.style.visibility=on?'visible':'hidden'}
-  scene.style.transform=on?`translate3d(0,${(p*12).toFixed(2)}px,0) scale(${(1-p*.06).toFixed(4)})`:'';
+}
+function sSpring(to,v0,done){
+  if(!LITE||REDUCED) return spring(sheetY,to,v0,setSheet,done,380,39);
+  const path=springPath(sheetY,to,v0,380,39);
+  sunkOn(true); scene.style.transform='';
+  const ctl=playPath(path,[[sheet,y=>({transform:`translate3d(0,${y}px,0)`})],[scrim,y=>({opacity:Math.max(0,Math.min(1,1-y/sheetH))})]],()=>{});
+  ctl.onstop=y=>setSheet(y);
+  ctl.onend=()=>{setSheet(to);done&&done()};
+  return ctl;
 }
 function openSheet(i,v0=0){
   sAnim&&sAnim.cancel();
   if(!sheetOpen&&sheetDay!==i) prepareSheet(i);
   lastFocus=document.activeElement; sheetOpen=true;
-  sAnim=spring(sheetY,0,v0,setSheet,()=>{sAnim=null},380,39);
+  sAnim=sSpring(0,v0,()=>{sAnim=null});
 }
 function closeSheet(v0=0){
   sAnim&&sAnim.cancel(); sheetOpen=false;
-  sAnim=spring(sheetY,sheetH+20,v0,setSheet,()=>{sAnim=null;setSheet(sheetH+20);lastFocus&&lastFocus.focus&&lastFocus.focus({preventScroll:true})},380,39);
+  sAnim=sSpring(sheetH+20,v0,()=>{sAnim=null;setSheet(sheetH+20);lastFocus&&lastFocus.focus&&lastFocus.focus({preventScroll:true})});
 }
 scrim.addEventListener('click',()=>closeSheet());
 let sg=null;
