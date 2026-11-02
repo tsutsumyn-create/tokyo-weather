@@ -32,7 +32,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 
 #topband{position:fixed;left:0;right:0;top:0;height:max(env(safe-area-inset-top,0px),1px);z-index:30;pointer-events:none;background:#a3b0bb;transition:background-color .25s}
-#scene{position:fixed;inset:0;overflow:hidden}
+#scene{position:fixed;inset:0;overflow:hidden;transform-origin:50% 0;will-change:transform}
+#scene.sunk{border-radius:18px}
+.bg{position:absolute;inset:0}
+#bgB{will-change:opacity}
 .g-sun{background:linear-gradient(180deg,#f2cc55 0%,#F6DE7D 45%,#F5DEB3 100%)}
 .g-cs{background:linear-gradient(180deg,#8d9eac 0%,#64C6C7 100%)}
 .g-cl{background:linear-gradient(180deg,#a3b0bb 0%,#708090 100%)}
@@ -52,6 +55,8 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .panel{flex:0 0 100%;height:100%;display:flex;flex-direction:column;align-items:center;color:var(--fg);
   padding:calc(var(--barH,40px) + env(safe-area-inset-top,0px) + clamp(4px,1.2vh,12px)) max(16px,env(safe-area-inset-right,0px)) calc(var(--footH,64px) + env(safe-area-inset-bottom,0px) + 6px) var(--gut)}
 .panel[hidden]{display:flex;visibility:hidden}
+.panel.near{will-change:opacity}
+.panel.near .big,.panel.near .icw{will-change:transform}
 /* 文字色はパネル自身の天気で決める（上の帯の色に引きずられない） */
 .panel{--fg:#ffffff; --fg-soft:rgba(255,255,255,.78); --fg-line:rgba(255,255,255,.5)}
 .panel.w-sun{--fg:#4d3f17; --fg-soft:rgba(77,63,23,.72); --fg-line:rgba(77,63,23,.38)}
@@ -95,7 +100,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .dots{position:relative;display:flex;gap:7px}
 .dots button{width:18px;height:18px;display:grid;place-items:center}
 .dots button i{width:6px;height:6px;border-radius:50%;border:1.5px solid var(--fg-soft);display:block;transition:border-color .3s}
-.ind{position:absolute;left:6px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--dot);pointer-events:none;transition:transform .3s cubic-bezier(.22,.8,.26,1),background .2s}
+.ind{position:absolute;left:6px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--dot);pointer-events:none;transform-origin:center;will-change:transform;transition:background .2s}
 .up{font-size:.72rem;color:var(--fg-soft);display:flex;align-items:center;gap:6px;padding:4px 12px}
 .up svg{width:14px;height:14px}
 :focus-visible{outline:2px solid currentColor;outline-offset:3px;border-radius:6px}
@@ -144,6 +149,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 </head><body>
 <div id="topband" aria-hidden="true"></div>
 <div id="scene">
+  <div class="bg" id="bgA"></div><div class="bg" id="bgB" style="opacity:0"></div>
   <div class="vp" id="vp">
     <div class="track" id="track"></div>
     <button class="nav l" id="prev" aria-label="前の日"><svg class="li" viewBox="0 0 30 44" stroke-width="1.6"><path d="M24 4L6 22l18 18"/></svg></button>
@@ -712,7 +718,7 @@ let RAW=null;
 function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
   const all=d.days, fut=all.filter(x=>relDay(x)>=0);
   DAYS=fut.length?fut:all.slice(-1);
-  document.getElementById('snap').textContent=(d.snap||'')+' · v1.4'}
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.5'}
 /* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
 let shownToday=todayStart().getTime();
 function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
@@ -803,13 +809,15 @@ function panelHTML(d,i){
     <i class="sp" style="flex-grow:.55"></i>`;
 }
 const moodOf=i=>DAYS[i]?MOOD(DAYS[i].ic):null;
-/* ---------- 描画：全日分のパネルを一度だけ作り、各パネルが自分の背景色を持つ ----------
-   スワイプ中に動かすのはトラック1枚の位置だけ。背景・文字色はパネルと一緒に動くので、
-   途中で色の組み合わせがずれることがない。着地はCSSトランジション（合成スレッド）に任せる。 */
+/* ---------- 描画 ----------
+   全日分のパネルは一度だけ作る（切り替えのたびに作り直さない）。文字色は各パネルが自分の天気で持つ。
+   動きは「位置x → 各要素のスタイル」という1つの関数で決め、指で動かす間はそれを毎フレーム当て、
+   指を離した後はバネの軌道を先に計算して同じ関数でキーフレーム化し、Web Animations（合成スレッド）で再生する。
+   どちらも同じ関数なので、背景・文字色・ドットがずれない。 */
 function renderPanels(){
-  track.innerHTML=DAYS.map((d,i)=>{const m=MOOD(d.ic);
-    return `<section class="panel g-${m}${m==='sun'?' w-sun':''}" data-i="${i}">${panelHTML(d,i)}</section>`}).join('');
-  if(!moving&&!g){setPos(cur,false); settle()}
+  track.innerHTML=DAYS.map((d,i)=>`<section class="panel${MOOD(d.ic)==='sun'?' w-sun':''}" data-i="${i}">${panelHTML(d,i)}</section>`).join('');
+  PC=null;
+  if(!hAnim&&!g){normalize();applyX(0);settle()}
 }
 function placeArrows(){
   const p=track.children[cur], ic=p&&p.querySelector('.icw'); if(!ic) return;
@@ -820,69 +828,126 @@ function buildDots(){
   $('dots').innerHTML=DAYS.map((d,k)=>`<button role="tab" aria-label="${d.m}月${d.d}日"><i></i></button>`).join('')+'<span class="ind" id="ind"></span>';
   $('dots').querySelectorAll('button').forEach((b,k)=>b.addEventListener('click',()=>jump(k)));
 }
-/* 上の帯・ステータスバー・上下の文字色：見えている日が変わったときだけ切り替える */
-const TOPC={sun:'#f2cc55',cs:'#8d9eac',cl:'#a3b0bb',rn:'#4f606e'};
+const TOPC={sun:[242,204,85],cs:[141,158,172],cl:[163,176,187],rn:[79,96,110]};
+const hex=c=>'#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');
+const mix=(A,B,t)=>hex(A.map((v,i)=>v+(B[i]-v)*t));
 const metaTheme=document.querySelector('meta[name="theme-color"]');
-let shownMood=null;
-function chrome(i){
-  const m=moodOf(i)||'cl'; if(m===shownMood) return; shownMood=m;
-  root.classList.toggle('w-sun',m==='sun');
-  const c=TOPC[m]; $('topband').style.backgroundColor=c;
-  root.style.backgroundColor=c; document.body.style.backgroundColor=c;
-  if(metaTheme) metaTheme.setAttribute('content',c);
-}
-/* 見えている日以外の2つ先からは描画しない（大きなレイヤーの負担を減らす） */
+let chromeM=null;
+/* 上下の文字（場所・更新時刻・ドット・矢印）の色：見えている日の天気に合わせる */
+function chromeText(i){const m=moodOf(i)||'cl'; if(m===chromeM) return; chromeM=m; root.classList.toggle('w-sun',m==='sun')}
+/* 止まったときだけ：ページ全体の背景とテーマ色（毎フレーム変えると全面の再描画が走る） */
 function settle(){
-  [...track.children].forEach((el,k)=>{const far=Math.abs(k-cur)>1; if(el.hidden!==far) el.hidden=far});
-  chrome(cur);
+  [...track.children].forEach((el,k)=>{const far=Math.abs(k-cur)>1; if(el.hidden!==far) el.hidden=far; el.classList.toggle('near',!far)});
+  chromeText(cur);
+  const c=hex(TOPC[moodOf(cur)]||TOPC.cl);
+  $('topband').style.backgroundColor=c; root.style.backgroundColor=c; document.body.style.backgroundColor=c;
+  if(metaTheme) metaTheme.setAttribute('content',c);
   $('prev').disabled=cur===0; $('next').disabled=cur===DAYS.length-1;
   $('dots').querySelectorAll('button').forEach((b,k)=>b.setAttribute('aria-current',k===cur));
-  const ind=$('ind'); if(ind) ind.style.transform=`translateX(${cur*STEP}px)`;
   placeArrows();
+  if(!sheetOpen){const day=cur;setTimeout(()=>{if(!sheetOpen&&!hAnim&&!g&&cur===day)prepareSheet(day,true)},250)}
 }
-/* トラック位置。anim=trueならCSSトランジションで滑らせる */
-const EASE='cubic-bezier(.22,.8,.26,1)';
-function setPos(i,anim,dur=300,dx=0){
-  x=dx;
-  track.style.transition=anim&&!REDUCED?`transform ${dur}ms ${EASE}`:'none';
-  track.style.transform=`translate3d(${-i*W+dx}px,0,0)`;
+/* 現在の日を中心に、範囲外になったパネルの演出スタイルを外し、背景を確定させる */
+function normalize(){
+  [...track.children].forEach((el,k)=>{
+    const near=Math.abs(k-cur)<=1; if(near){el.hidden=false;el.classList.add('near');return}
+    el.style.opacity=''; const pz=el.querySelector('.pz'),ic=el.querySelector('.icw');
+    if(pz)pz.style.transform=''; if(ic)ic.style.transform='';
+  });
+  $('bgA').className='bg g-'+(moodOf(cur)||'cl'); bgB.style.opacity=0; PC=null;
 }
-function curX(){const m=getComputedStyle(track).transform; if(!m||m==='none') return -cur*W; return new DOMMatrix(m).m41}
-/* 指を離したときの速度から、残りの距離にちょうど良い時間を出す */
-const durFor=(dist,v)=>{const a=Math.abs(dist); if(a<1) return 0; const t=Math.abs(v)>200?a/Math.abs(v)*1000*1.8:300; return Math.max(170,Math.min(320,t))};
-let moving=false, goTok=0;
-function go(dir,v=0){
-  const n=Math.max(0,Math.min(DAYS.length-1,cur+dir)); const from=curX();
-  if(n!==cur){cur=n; track.children[cur]&&(track.children[cur].hidden=false)}
-  const dist=-cur*W-from;
-  const ms=durFor(dist,v); moving=true; setPos(cur,true,ms); chrome(cur);
-  if(Math.abs(dist)<1||REDUCED){moving=false;settle();return}
-  const tok=++goTok; setTimeout(()=>{if(moving&&tok===goTok){moving=false;settle()}},ms+120);
+/* 位置x（px。負＝次の日へ）から各要素のスタイルを出す関数の一式 */
+const bgB=$('bgB');
+let PC=null;
+function partsFor(sgn){
+  const nb=cur-sgn, nbm=sgn?moodOf(nb):null, L=[];
+  L.push([track,p=>({transform:`translate3d(${-cur*W+p}px,0,0)`})]);
+  const t=p=>nbm?Math.max(0,Math.min(1,p*sgn/W)):0;
+  L.push([bgB,p=>({opacity:t(p)})]);
+  const A=TOPC[moodOf(cur)]||TOPC.cl, B=TOPC[nbm]||A;
+  L.push([$('topband'),p=>({backgroundColor:mix(A,B,t(p))})]);
+  const ind=$('ind'), N=DAYS.length-1;
+  if(ind) L.push([ind,p=>{const q=Math.min(1,Math.abs(p)/W), pos=Math.max(0,Math.min(N,cur-p/W));
+    return {transform:`translateX(${(pos*STEP).toFixed(2)}px) scaleX(${(1+Math.min(.8,q*1.6*(1-q))).toFixed(3)})`}}]);
+  for(let k=cur-1;k<=cur+1;k++){
+    const el=track.children[k]; if(!el) continue;
+    const rel=k-cur, off=p=>rel*W+p, q=p=>Math.min(1,Math.abs(off(p))/W);
+    L.push([el,p=>({opacity:(1-q(p)*.6).toFixed(3)})]);
+    const pz=el.querySelector('.pz'), ic=el.querySelector('.icw');
+    if(pz) L.push([pz,p=>({transform:`translate3d(${(-off(p)*.2).toFixed(1)}px,0,0)`})]);
+    if(ic) L.push([ic,p=>({transform:`translate3d(${(-off(p)*.08).toFixed(1)}px,0,0) scale(${(1-q(p)*.12).toFixed(4)})`})]);
+  }
+  if(nbm&&bgB.dataset.m!==nbm){bgB.className='bg g-'+nbm;bgB.dataset.m=nbm}
+  return {sgn,nb,nbm,L};
 }
-track.addEventListener('transitionend',e=>{if(e.target===track&&e.propertyName==='transform'){moving=false;settle()}});
-/* 動いている途中で指が触れたら、その場で止める */
+function applyX(p){
+  x=p; const sgn=Math.sign(p)||(PC?PC.sgn:0);
+  if(!PC||PC.sgn!==sgn||PC.cur!==cur){PC=partsFor(sgn);PC.cur=cur}
+  for(const [el,fn] of PC.L) Object.assign(el.style,fn(p));
+  chromeText(Math.abs(p)>W/2&&PC.nbm?PC.nb:cur);
+}
+/* バネ（質量1・やや強めの減衰）。初速は指を離した瞬間の速度を引き継ぐ。軌道は60fpsで先に計算 */
+function springPath(from,to,v0,k,c){
+  const out=[from]; let p=from,v=v0; const h=1/240;
+  for(let f=0;f<150;f++){
+    for(let s=0;s<4;s++){const a=-k*(p-to)-c*v;v+=a*h;p+=v*h}
+    out.push(p); if(Math.abs(p-to)<.4&&Math.abs(v)<8) break;
+  }
+  out[out.length-1]=to; return out;
+}
+function playPath(path,L,apply,done,marks){
+  if(REDUCED||path.length<3){apply(path[path.length-1]);done&&done();return null}
+  const dur=(path.length-1)*1000/60, t0=performance.now();
+  const anims=L.map(([el,fn])=>el.animate(path.map(fn),{duration:dur,easing:'linear'}));
+  const timers=(marks||[]).map(([i,f])=>setTimeout(f,i*1000/60));
+  let over=false;
+  const ctl={cancel(){if(over)return;over=true;timers.forEach(clearTimeout);
+    const i=Math.min(path.length-1,Math.round((performance.now()-t0)/dur*(path.length-1)));
+    anims.forEach(a=>a.cancel()); apply(path[i])}};
+  anims[0].onfinish=()=>{if(over)return;over=true;apply(path[path.length-1]);anims.forEach(a=>a.cancel());done&&done()};
+  return ctl;
+}
+/* 横方向の着地 */
+let hAnim=null;
+function hRelease(to,v0,done){
+  const path=springPath(x,to,v0,420,40);
+  const sgn=Math.sign(to!==0?to:x); if(!sgn){applyX(0);done&&done();return null}
+  PC=partsFor(sgn); PC.cur=cur;
+  const big=i=>Math.abs(path[i])>W/2, marks=[];
+  for(let i=1;i<path.length;i++) if(big(i)!==big(i-1)){const on=big(i);marks.push([i,()=>chromeText(on&&PC.nbm?PC.nb:cur)])}
+  return playPath(path,PC.L,applyX,done,marks);
+}
+function go(dir,v0=0){
+  interrupt();
+  if(!dir||!DAYS[cur+dir]){hAnim=hRelease(0,v0,()=>{hAnim=null;settle()});return}
+  hAnim=hRelease(-dir*W,v0,()=>{hAnim=null;cur+=dir;normalize();applyX(0);settle()});
+  if(hAnim) hAnim.commit=dir;
+}
+/* 動いている途中で指が触れたら止める。日付の切り替え中なら、その切り替えを確定させてから位置を引き継ぐ */
 function interrupt(){
-  if(!moving) return 0;
-  const px=curX(); moving=false;
-  const near=Math.max(0,Math.min(DAYS.length-1,Math.round(-px/W)));
-  cur=near; setPos(cur,false,0,px+cur*W);
-  [...track.children].forEach((el,k)=>{if(Math.abs(k-cur)<=1) el.hidden=false});
-  return x;
+  if(!hAnim) return;
+  const a=hAnim; hAnim=null; a.cancel();
+  const dir=a.commit;
+  if(dir){const keep=x; cur+=dir; normalize(); applyX(keep+dir*W)}
 }
 function jump(k){
   if(k===cur) return;
-  [...track.children].forEach((el,j)=>{if((j-cur)*(j-k)<=0) el.hidden=false});
-  const d=Math.abs(k-cur); cur=k; moving=true;
-  const ms=Math.min(480,260+d*30); setPos(cur,true,ms); chrome(cur);
-  if(REDUCED){moving=false;settle();return}
-  const tok=++goTok; setTimeout(()=>{if(moving&&tok===goTok){moving=false;settle()}},ms+120);
+  interrupt();
+  if(Math.abs(k-cur)===1) return go(k>cur?1:-1);
+  const t=REDUCED?0:280;
+  bgB.className='bg g-'+moodOf(k); bgB.dataset.m=moodOf(k);
+  vp.animate([{opacity:1},{opacity:0}],{duration:t/2,easing:'ease-in'}).onfinish=()=>{
+    cur=k;normalize();applyX(0);settle();
+    vp.animate([{opacity:0,transform:'scale(.985)'},{opacity:1,transform:'none'}],{duration:t,easing:'cubic-bezier(.22,1,.36,1)'});
+  };
+  bgB.animate([{opacity:0},{opacity:1}],{duration:t,easing:'ease'});
 }
-function show(i){cur=Math.max(0,Math.min(DAYS.length-1,i));buildDots();shownMood=null;renderPanels()}
+function show(i){cur=Math.max(0,Math.min(DAYS.length-1,i));buildDots();renderPanels()}
 function measure(){
   W=vp.clientWidth||1;
   root.style.setProperty('--barH',$('bar').offsetHeight+'px');
   root.style.setProperty('--footH',$('foot').offsetHeight+'px');
-  setPos(cur,false); placeArrows();
+  PC=null; if(!hAnim) applyX(0); placeArrows();
 }
 addEventListener('resize',measure);
 
@@ -903,7 +968,8 @@ vp.addEventListener('pointermove',e=>{
   if(g.axis==='x'){
     let nx=g.bx+dx;
     if((cur===0&&nx>0)||(cur===DAYS.length-1&&nx<0)) nx=rubber(nx,W*.5);
-    pendX=nx; if(!raf) raf=requestAnimationFrame(()=>{raf=0; if(pendX!==null){setPos(cur,false,0,pendX);chrome(Math.max(0,Math.min(DAYS.length-1,cur-Math.round(pendX/W))));pendX=null}});
+    else if(nx>W) nx=W+rubber(nx-W,W*.3); else if(nx<-W) nx=-W+rubber(nx+W,W*.3);
+    pendX=nx; if(!raf) raf=requestAnimationFrame(()=>{raf=0; if(pendX!==null){applyX(pendX);pendX=null}});
   }else if(g.axis==='y'){
     let y=sheetH+dy; if(y<0)y=-rubber(-y,60);
     pendY=y; if(!rafY) rafY=requestAnimationFrame(()=>{rafY=0; if(pendY!==null){setSheet(pendY);pendY=null}});
@@ -911,38 +977,39 @@ vp.addEventListener('pointermove',e=>{
 });
 function release(e){
   if(!g||e.pointerId!==g.id)return;
-  if(raf){cancelAnimationFrame(raf);raf=0;if(pendX!==null){setPos(cur,false,0,pendX);pendX=null}}
+  if(raf){cancelAnimationFrame(raf);raf=0;if(pendX!==null){applyX(pendX);pendX=null}}
   if(rafY){cancelAnimationFrame(rafY);rafY=0;if(pendY!==null){setSheet(pendY);pendY=null}}
   const s=g.samples, b=s[s.length-1]; let a=s[0];
   for(const q of s){ if(b[0]-q[0]<=100){a=q;break} }
   const dt=Math.max(8,b[0]-a[0]);
   const clampV=v=>Math.max(-4000,Math.min(4000,v));
   const vx=clampV((b[1]-a[1])/dt*1000), vy=clampV((b[2]-a[2])/dt*1000);
-  if(g.axis==='x'){
+  const axis=g.axis; g=null;
+  if(axis==='x'){
+    /* 判定はこのスワイプでの移動量と速さで行う */
     const moved=x/W;
     let dir=0;
     if((vx<-180&&moved<-.02)||moved<-.12) dir=1; else if((vx>180&&moved>.02)||moved>.12) dir=-1;
     go(dir,vx);
-  }else if(g.axis==='y'){
+  }else if(axis==='y'){
     if(vy<-300||(vy<300&&sheetY<sheetH*.8)) openSheet(cur,vy); else closeSheet(vy);
   }
-  if(g.axis) { suppressClick=true; setTimeout(()=>suppressClick=false,350) }
-  g=null;
+  if(axis) { suppressClick=true; setTimeout(()=>suppressClick=false,350) }
 }
 vp.addEventListener('click',e=>{if(suppressClick){e.stopPropagation();e.preventDefault();return}
   if(e.target.closest('[data-open]')) openSheet(cur)},true);
 vp.addEventListener('pointerup',release); vp.addEventListener('pointercancel',release);
-$('prev').addEventListener('click',()=>{interrupt();go(-1)});
-$('next').addEventListener('click',()=>{interrupt();go(1)});
+$('prev').addEventListener('click',()=>go(-1));
+$('next').addEventListener('click',()=>go(1));
 $('up').addEventListener('click',()=>openSheet(cur));
 document.addEventListener('keydown',e=>{
   if(sheetOpen){if(e.key==='Escape')closeSheet();return}
   if(e.key==='ArrowLeft')go(-1); if(e.key==='ArrowRight')go(1); if(e.key==='ArrowUp')openSheet(cur);
 });
 
-/* ---------- 4社の見立てシート（下からスライド。背景は暗くするだけ） ---------- */
+/* ---------- 4社の見立てシート（引き上げ・引き下げに追従、背景は奥へ沈む） ---------- */
 const sheet=$('sheet'),scrim=$('scrim'),inner=$('sheet-in');
-let sheetY=0,sheetH=1,sheetOpen=false,sheetDay=-1,lastFocus=null,built=false,shown=false,pendY=null,rafY=0,sMoving=false;
+let sheetY=0,sheetH=1,sheetOpen=false,sAnim=null,sheetDay=-1,lastFocus=null,built=false,sunk=false,pendY=null,rafY=0;
 function prepareSheet(i,force){
   if(!force&&sheetDay===i&&built)return;
   const d=DAYS[i], ji=JA.indexOf(d.dow[0]); sheetDay=i; built=true;
@@ -964,31 +1031,30 @@ function prepareSheet(i,force){
   sheet.scrollTop=0;
   sheetH=sheet.offsetHeight-40; if(!sheetOpen) setSheet(sheetH+20);
 }
-function showSheet(on){if(on!==shown){shown=on;scrim.style.pointerEvents=on?'auto':'none';sheet.style.visibility=on?'visible':'hidden'}}
-function setSheet(y,dur=0){
-  sheetY=y;
-  const t=dur&&!REDUCED?`${dur}ms ${EASE}`:'';
-  sheet.style.transition=t?'transform '+t:'none'; scrim.style.transition=t?'opacity '+t:'none';
-  sheet.style.transform=`translate3d(0,${y}px,0)`;
-  scrim.style.opacity=Math.max(0,Math.min(1,1-y/sheetH));
-  if(y<sheetH+10) showSheet(true); else if(!dur||REDUCED) showSheet(false);
+function sunkOn(on){if(on!==sunk){sunk=on;scene.classList.toggle('sunk',on);scrim.style.pointerEvents=on?'auto':'none';sheet.style.visibility=on?'visible':'hidden'}}
+const sheetP=y=>Math.max(0,Math.min(1,1-y/sheetH));
+const SHEET_L=[
+  [sheet,y=>({transform:`translate3d(0,${y.toFixed(1)}px,0)`})],
+  [scrim,y=>({opacity:sheetP(y).toFixed(3)})],
+  [scene,y=>{const p=sheetP(y);return {transform:p>.002?`translate3d(0,${(p*12).toFixed(2)}px,0) scale(${(1-p*.06).toFixed(4)})`:'none'}}]
+];
+function setSheet(y){
+  sheetY=y; for(const [el,fn] of SHEET_L) Object.assign(el.style,fn(y));
+  sunkOn(sheetP(y)>.002);
 }
-function sheetStop(){
-  if(!sMoving) return; sMoving=false;
-  const m=getComputedStyle(sheet).transform; setSheet(m&&m!=='none'?new DOMMatrix(m).m42:sheetY);
+function sheetStop(){if(sAnim){const a=sAnim;sAnim=null;a.cancel()}}
+function sRelease(to,v0,done){
+  sheetStop(); sunkOn(true);
+  return playPath(springPath(sheetY,to,v0,380,39),SHEET_L,setSheet,done);
 }
-sheet.addEventListener('transitionend',e=>{if(e.target!==sheet||e.propertyName!=='transform')return; sMoving=false; if(!sheetOpen) showSheet(false)});
-function openSheet(i,v=0){
-  sheetStop();
+function openSheet(i,v0=0){
   if(!sheetOpen&&sheetDay!==i) prepareSheet(i);
-  lastFocus=document.activeElement; sheetOpen=true; showSheet(true);
-  const d=durFor(sheetY,v)||0; sMoving=d>0; setSheet(0,d);
+  lastFocus=document.activeElement; sheetOpen=true;
+  sAnim=sRelease(0,v0,()=>{sAnim=null});
 }
-function closeSheet(v=0){
-  sheetStop(); sheetOpen=false;
-  const to=sheetH+20, d=durFor(to-sheetY,v)||0; sMoving=d>0; setSheet(to,d);
-  if(!d) showSheet(false);
-  lastFocus&&lastFocus.focus&&lastFocus.focus({preventScroll:true});
+function closeSheet(v0=0){
+  sheetOpen=false;
+  sAnim=sRelease(sheetH+20,v0,()=>{sAnim=null;lastFocus&&lastFocus.focus&&lastFocus.focus({preventScroll:true})});
 }
 scrim.addEventListener('click',()=>closeSheet());
 let sg=null;
