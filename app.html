@@ -42,7 +42,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .g-rn{background:linear-gradient(180deg,#4f606e 0%,#2b3842 100%)}
 
 .stage{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none;z-index:3;
-  padding-top:calc(env(safe-area-inset-top,0px) + 8px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 6px)}
+  padding-top:calc(env(safe-area-inset-top,0px) + 8px + var(--sysPad,0px));padding-bottom:calc(env(safe-area-inset-bottom,0px) + 6px)}
 .bar,.foot{padding-left:var(--gut);padding-right:max(16px,env(safe-area-inset-right,0px));color:var(--fg);transition:color .2s ease}
 .foot{pointer-events:auto}
 .bar{display:flex;justify-content:space-between;gap:8px;font-size:.74rem}
@@ -53,7 +53,7 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .vp{position:absolute;inset:0;overflow:hidden;touch-action:none}
 .track{display:flex;height:100%;will-change:transform}
 .panel{flex:0 0 100%;height:100%;display:flex;flex-direction:column;align-items:center;color:var(--fg);
-  padding:calc(var(--barH,40px) + env(safe-area-inset-top,0px) + clamp(4px,1.2vh,12px)) max(16px,env(safe-area-inset-right,0px)) calc(var(--footH,64px) + env(safe-area-inset-bottom,0px) + 6px) var(--gut)}
+  padding:calc(var(--barH,40px) + env(safe-area-inset-top,0px) + var(--sysPad,0px) + clamp(4px,1.2vh,12px)) max(16px,env(safe-area-inset-right,0px)) calc(var(--footH,64px) + env(safe-area-inset-bottom,0px) + 6px) var(--gut)}
 .panel[hidden]{display:flex;visibility:hidden}
 .panel.near{will-change:opacity}
 .panel.near .big,.panel.near .icw{will-change:transform}
@@ -718,7 +718,7 @@ let RAW=null;
 function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
   const all=d.days, fut=all.filter(x=>relDay(x)>=0);
   DAYS=fut.length?fut:all.slice(-1);
-  document.getElementById('snap').textContent=(d.snap||'')+' · v1.5'}
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.6'}
 /* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
 let shownToday=todayStart().getTime();
 function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
@@ -829,6 +829,7 @@ function buildDots(){
   $('dots').querySelectorAll('button').forEach((b,k)=>b.addEventListener('click',()=>jump(k)));
 }
 const TOPC={sun:[242,204,85],cs:[141,158,172],cl:[163,176,187],rn:[79,96,110]};
+const BOTC={sun:'#F5DEB3',cs:'#64C6C7',cl:'#708090',rn:'#2b3842'};
 const hex=c=>'#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');
 const mix=(A,B,t)=>hex(A.map((v,i)=>v+(B[i]-v)*t));
 const metaTheme=document.querySelector('meta[name="theme-color"]');
@@ -840,7 +841,9 @@ function settle(){
   [...track.children].forEach((el,k)=>{const far=Math.abs(k-cur)>1; if(el.hidden!==far) el.hidden=far; el.classList.toggle('near',!far)});
   chromeText(cur);
   const c=hex(TOPC[moodOf(cur)]||TOPC.cl);
-  $('topband').style.backgroundColor=c; root.style.backgroundColor=c; document.body.style.backgroundColor=c;
+  /* ページ下地は背景グラデーションの下端の色に（端末によって画面下に下地が見える隙間が出るため） */
+  const lo=BOTC[moodOf(cur)]||BOTC.cl;
+  $('topband').style.backgroundColor=c; root.style.backgroundColor=lo; document.body.style.backgroundColor=lo;
   if(metaTheme) metaTheme.setAttribute('content',c);
   $('prev').disabled=cur===0; $('next').disabled=cur===DAYS.length-1;
   $('dots').querySelectorAll('button').forEach((b,k)=>b.setAttribute('aria-current',k===cur));
@@ -943,7 +946,17 @@ function jump(k){
   bgB.animate([{opacity:0},{opacity:1}],{duration:t,easing:'ease'});
 }
 function show(i){cur=Math.max(0,Math.min(DAYS.length-1,i));buildDots();renderPanels()}
+/* 一部のiOS 26系のホーム画面アプリでは、上端の余白（safe-area）が0になり、
+   システムが描く帯とその下のぼかしに上の行が重なって霞む。その状態を検出して上の行を下げる */
+function sysBarPad(){
+  const pr=document.createElement('div'); pr.style.cssText='position:fixed;top:0;padding-top:env(safe-area-inset-top,0px);visibility:hidden';
+  document.body.appendChild(pr); const sa=parseFloat(getComputedStyle(pr).paddingTop)||0; pr.remove();
+  const standalone=navigator.standalone||matchMedia('(display-mode: standalone)').matches;
+  const iphone=/iPhone/.test(navigator.userAgent);
+  root.style.setProperty('--sysPad',(standalone&&iphone&&sa<1)?'26px':'0px');
+}
 function measure(){
+  sysBarPad();
   W=vp.clientWidth||1;
   root.style.setProperty('--barH',$('bar').offsetHeight+'px');
   root.style.setProperty('--footH',$('foot').offsetHeight+'px');
