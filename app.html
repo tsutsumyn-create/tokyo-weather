@@ -6,12 +6,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="東京の天気">
-<meta name="theme-color" content="#a3b0bb">
+<meta name="theme-color" content="#e3e6ee">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
 <title>東京の天気</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@200;300;400;500&family=M+PLUS+Rounded+1c:wght@300;400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@200;300;400;500&family=M+PLUS+Rounded+1c:wght@300;400;500;700&family=Fredoka:wght@500;600&family=Zen+Maru+Gothic:wght@700&display=swap">
 <style>
 /* Layout: フルブリード1画面。背景色＝その日の天気。指の動きに連動して日付・背景・文字色が切り替わり、離すとバネで収まる。
    4社の見立ては下から引き上げるシート（背景のページが奥へ沈む）。天気ごとに色を変えるため単一ルック（テーマ非連動） */
@@ -31,7 +31,7 @@ body{margin:0;height:100%;overflow:hidden;background:#0d1317;font-family:var(--f
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 
-#topband{position:fixed;left:0;right:0;top:0;height:max(env(safe-area-inset-top,0px),1px);z-index:30;pointer-events:none;background:#a3b0bb;transition:background-color .25s}
+#topband{position:fixed;left:0;right:0;top:0;height:max(env(safe-area-inset-top,0px),1px);z-index:30;pointer-events:none;background:#e3e6ee;transition:background-color .25s}
 #scene{position:fixed;inset:0;overflow:hidden;transform-origin:50% 0;will-change:transform}
 #scene.sunk{border-radius:18px}
 .bg{position:absolute;inset:0}
@@ -145,6 +145,33 @@ svg.li{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .sh-note{font-size:.74rem;color:var(--s-soft);line-height:1.7;margin-top:14px;font-weight:300}
 .x:focus-visible,.row2 a:focus-visible{outline:2px solid var(--s-fg);outline-offset:2px}
 @media (max-height:640px){.strip{display:none}}
+
+/* かわいい（v1.7）：パステル＋水玉、ぷっくり書体、白いカード。色の意味（晴れ=黄／くもり時々晴れ=ミント／くもり=グレー／雨=ラベンダー）は従来どおり */
+.g-sun{background:radial-gradient(circle,rgba(255,255,255,.55) 2.5px,transparent 3px) 0 0/26px 26px,linear-gradient(180deg,#FFE7A3,#FFD3B5)!important}
+.g-cs{background:radial-gradient(circle,rgba(255,255,255,.55) 2.5px,transparent 3px) 0 0/26px 26px,linear-gradient(180deg,#BFEDE6,#A6DDF0)!important}
+.g-cl{background:radial-gradient(circle,rgba(255,255,255,.55) 2.5px,transparent 3px) 0 0/26px 26px,linear-gradient(180deg,#E3E6EE,#CCD3E0)!important}
+.g-rn{background:radial-gradient(circle,rgba(255,255,255,.35) 2.5px,transparent 3px) 0 0/26px 26px,linear-gradient(180deg,#A9B8DE,#8E9DCB)!important}
+.panel,.panel.w-sun,:root,.w-sun{--fg:#5b4636;--fg-soft:rgba(91,70,54,.68);--fg-line:rgba(91,70,54,.25);--dot:#ff8fa3}
+.panel.m-rn{--fg:#fff;--fg-soft:rgba(255,255,255,.85);--fg-line:rgba(255,255,255,.45)}
+.panel{overflow:hidden}
+.big,.deg,.lo b,.strip .tt,.day{font-family:"Fredoka","M PLUS Rounded 1c",sans-serif!important;font-weight:600!important}
+.day{font-weight:500!important}
+.big{letter-spacing:-.01em!important}
+.wx,.tip b,.note{font-family:"Zen Maru Gothic","M PLUS Rounded 1c",sans-serif!important;font-weight:700!important}
+.wxic{stroke-width:2.6px!important}
+.wxic path{fill:#fff}.wxic circle{fill:#FFD35C}
+.m-rn .wxic path{fill:#e9eefc}
+.icw{filter:drop-shadow(0 8px 0 rgba(91,70,54,.08))}
+.chip{border:none;background:#fff;color:#5b4636;border-radius:99px;padding:5px 14px;box-shadow:0 4px 0 rgba(91,70,54,.08)}
+.strip,.tips,.note{background:rgba(255,255,255,.88);color:#5b4636;border:none!important;border-radius:26px;padding:12px 8px!important;box-shadow:0 6px 0 rgba(91,70,54,.08);--fg:#5b4636;--fg-soft:rgba(91,70,54,.65);--fg-line:rgba(91,70,54,.2)}
+.strip span,.tips span{color:rgba(91,70,54,.65)!important}
+.note{padding:14px 18px!important}
+.lv i{height:5px!important;width:10px!important;border-radius:9px!important}.lv i.on{background:#ff8fa3!important}
+/* シートもクリーム地に統一 */
+.sheet,.sheet.m-sun,.sheet.m-cs,.sheet.m-cl,.sheet.m-rn{--s-bg:#fffaf3;--s-fg:#5b4636;--s-soft:rgba(91,70,54,.62);--s-line:rgba(91,70,54,.14)}
+.sheet.m-sun{--s-bg:#fff6dc}.sheet.m-cs{--s-bg:#effaf8}.sheet.m-cl{--s-bg:#f5f6fa}.sheet.m-rn{--s-bg:#f1f3fb}
+.sh-title,.sh-why{font-family:"Zen Maru Gothic","M PLUS Rounded 1c",sans-serif;font-weight:700}
+.sh-sum .tmp{font-family:"Fredoka","M PLUS Rounded 1c",sans-serif;font-weight:600}
 </style>
 </head><body>
 <div id="topband" aria-hidden="true"></div>
@@ -718,7 +745,7 @@ let RAW=null;
 function load(d){RAW=d;SITES=d.sites;WEEK_PUB=d.weekPub;
   const all=d.days, fut=all.filter(x=>relDay(x)>=0);
   DAYS=fut.length?fut:all.slice(-1);
-  document.getElementById('snap').textContent=(d.snap||'')+' · v1.6'}
+  document.getElementById('snap').textContent=(d.snap||'')+' · v1.7'}
 /* 日付をまたいで開きっぱなしにしていた場合も並べ直す */
 let shownToday=todayStart().getTime();
 function rollDate(){const t=todayStart().getTime(); if(t!==shownToday&&RAW){shownToday=t;load(RAW);show(0)}}
@@ -815,7 +842,7 @@ const moodOf=i=>DAYS[i]?MOOD(DAYS[i].ic):null;
    指を離した後はバネの軌道を先に計算して同じ関数でキーフレーム化し、Web Animations（合成スレッド）で再生する。
    どちらも同じ関数なので、背景・文字色・ドットがずれない。 */
 function renderPanels(){
-  track.innerHTML=DAYS.map((d,i)=>`<section class="panel${MOOD(d.ic)==='sun'?' w-sun':''}" data-i="${i}">${panelHTML(d,i)}</section>`).join('');
+  track.innerHTML=DAYS.map((d,i)=>`<section class="panel m-${MOOD(d.ic)}${MOOD(d.ic)==='sun'?' w-sun':''}" data-i="${i}">${panelHTML(d,i)}</section>`).join('');
   PC=null;
   if(!hAnim&&!g){normalize();applyX(0);settle()}
 }
@@ -828,8 +855,8 @@ function buildDots(){
   $('dots').innerHTML=DAYS.map((d,k)=>`<button role="tab" aria-label="${d.m}月${d.d}日"><i></i></button>`).join('')+'<span class="ind" id="ind"></span>';
   $('dots').querySelectorAll('button').forEach((b,k)=>b.addEventListener('click',()=>jump(k)));
 }
-const TOPC={sun:[242,204,85],cs:[141,158,172],cl:[163,176,187],rn:[79,96,110]};
-const BOTC={sun:'#F5DEB3',cs:'#64C6C7',cl:'#708090',rn:'#2b3842'};
+const TOPC={sun:[255,231,163],cs:[191,237,230],cl:[227,230,238],rn:[169,184,222]};
+const BOTC={sun:'#FFD3B5',cs:'#A6DDF0',cl:'#CCD3E0',rn:'#8E9DCB'};
 const hex=c=>'#'+c.map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');
 const mix=(A,B,t)=>hex(A.map((v,i)=>v+(B[i]-v)*t));
 const metaTheme=document.querySelector('meta[name="theme-color"]');
